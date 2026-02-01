@@ -1,13 +1,26 @@
 @import "tailwindcss";
 
+/* =========================
+   Tebas Tech Theme (Light)
+   Azul claro + superfícies claras
+   ========================= */
+
 :root {
-  /* Tebas/Kyte-like palette */
-  --tebas-bg: 241 242 243; /* #F1F2F3 */
-  --tebas-sidebar: 66 75 88; /* #424B58 */
-  --tebas-primary: 45 209 172; /* #2DD1AC */
+  /* Brand colors (RGB) */
+  --tebas-brand: 0 214 255; /* azul claro (aprox do seu logo) */
+  --tebas-brand-2: 0 140 255; /* variação azul (para hover/gradiente) */
+
+  /* App surfaces (RGB) */
+  --tebas-bg: 240 250 255; /* fundo geral bem claro azulado */
+  --tebas-surface: 255 255 255; /* cards/branco */
+  --tebas-border: 226 242 250; /* bordas suaves azuladas */
+
+  /* Sidebar (RGB) - azul marinho, mas com cara mais "tech" e menos cinza */
+  --tebas-sidebar: 10 34 64; /* navy */
+  --tebas-sidebar-2: 12 48 92; /* navy mais claro p/ hover */
 
   /* shadcn/ui tokens (HSL) */
-  --background: 210 20% 98%;
+  --background: 198 100% 97%;
   --foreground: 222 47% 11%;
 
   --card: 0 0% 100%;
@@ -16,27 +29,27 @@
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
 
-  /* Primary = verde Kyte */
-  --primary: 167 65% 50%;
+  /* Primary = azul Tebas */
+  --primary: 191 100% 50%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 210 16% 93%;
+  --secondary: 198 55% 92%;
   --secondary-foreground: 222 47% 11%;
 
-  --muted: 210 16% 93%;
-  --muted-foreground: 215 16% 47%;
+  --muted: 198 45% 92%;
+  --muted-foreground: 215 16% 45%;
 
-  --accent: 210 16% 93%;
+  --accent: 198 55% 92%;
   --accent-foreground: 222 47% 11%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
 
-  --border: 214 18% 88%;
-  --input: 214 18% 88%;
-  --ring: 167 65% 50%;
+  --border: 198 55% 90%;
+  --input: 198 55% 90%;
+  --ring: 191 100% 50%;
 
-  --radius: 12px;
+  --radius: 14px;
 }
 
 html,
