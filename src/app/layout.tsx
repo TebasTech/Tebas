@@ -1,6 +1,7 @@
 import "./globals.css"
 import type { Metadata } from "next"
 import Link from "next/link"
+import Image from "next/image"
 import { ReactNode } from "react"
 
 export const metadata: Metadata = {
@@ -14,10 +15,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="h-screen">
         <div className="flex h-screen">
           <Sidebar />
+
           <div className="flex-1 flex flex-col">
             <Topbar />
+
             <main className="flex-1 overflow-auto bg-[rgb(var(--tebas-bg))] p-6">
-              {children}
+              <div className="min-h-[calc(100vh-6rem)] rounded-2xl bg-white border border-black/5 shadow-sm p-6">
+                {children}
+              </div>
             </main>
           </div>
         </div>
@@ -29,10 +34,32 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 function Sidebar() {
   return (
     <aside className="w-[280px] bg-[rgb(var(--tebas-sidebar))] text-white flex flex-col">
-      {/* Logo / brand */}
+      {/* Brand (logo + logotipo) */}
       <div className="px-6 py-5 border-b border-white/10">
-        <div className="text-lg font-semibold leading-tight">Tebas Tech</div>
-        <div className="text-xs opacity-70">Gestão simples. Lucro claro.</div>
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-white/10 flex items-center justify-center overflow-hidden">
+            <Image
+              src="/logo.png"
+              alt="Tebas Tech"
+              width={40}
+              height={40}
+              className="h-10 w-10 object-contain"
+              priority
+            />
+          </div>
+
+          <div className="leading-tight">
+            <Image
+              src="/logotipo.png"
+              alt="Tebas Tech"
+              width={140}
+              height={24}
+              className="h-6 w-auto object-contain"
+              priority
+            />
+            <div className="text-xs opacity-70 mt-1">Gestão simples. Lucro claro.</div>
+          </div>
+        </div>
       </div>
 
       {/* Menu */}
@@ -43,7 +70,11 @@ function Sidebar() {
         <NavItem href="/produtos" label="Produtos" icon={<IconTag />} />
         <NavItem href="/clientes" label="Clientes" icon={<IconUser />} />
         <NavItem href="/vendas" label="Vendas" icon={<IconCart />} />
-        <NavItem href="/financeiro" label="Compras & Despesas" icon={<IconWallet />} />
+        <NavItem
+          href="/financeiro"
+          label="Compras & Despesas"
+          icon={<IconWallet />}
+        />
         <NavItem href="/marketing" label="Marketing" icon={<IconMegaphone />} />
         <NavItem href="/estatisticas" label="Estatísticas" icon={<IconChart />} />
         <NavItem href="/ajuda" label="Ajuda" icon={<IconHelp />} />
@@ -64,7 +95,7 @@ function Topbar() {
         <div className="relative w-full">
           <input
             placeholder="Buscar… (produto, cliente, venda)"
-            className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 px-4 pr-10 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+            className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-4 pr-10 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50">
             <IconSearch />
@@ -73,13 +104,19 @@ function Topbar() {
       </div>
 
       <div className="flex items-center gap-3">
-        <button className="h-10 px-4 rounded-lg bg-[rgb(var(--tebas-primary))] text-white text-sm font-medium hover:opacity-90">
+        <button className="h-10 px-4 rounded-xl bg-[rgb(var(--tebas-primary))] text-white text-sm font-semibold hover:opacity-90">
           + Produto
         </button>
 
-        <div className="flex items-center gap-2 pl-2">
-          <div className="h-9 w-9 rounded-full bg-slate-200 flex items-center justify-center text-sm font-semibold text-slate-700">
-            TT
+        <div className="flex items-center gap-2 pl-1">
+          <div className="h-9 w-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden">
+            <Image
+              src="/logo.png"
+              alt="Tebas Tech"
+              width={36}
+              height={36}
+              className="h-9 w-9 object-contain"
+            />
           </div>
           <div className="text-sm text-slate-700">Conta</div>
         </div>
@@ -100,7 +137,7 @@ function NavItem({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 rounded-lg px-4 py-3 text-white/90 hover:bg-white/10 transition"
+      className="flex items-center gap-3 rounded-xl px-4 py-3 text-white/90 hover:bg-white/10 transition"
     >
       <span className="opacity-90">{icon}</span>
       <span className="font-medium">{label}</span>
@@ -108,7 +145,7 @@ function NavItem({
   )
 }
 
-/* ----- Inline icons (leve, sem libs) ----- */
+/* ----- Inline icons ----- */
 
 function IconGrid() {
   return (
