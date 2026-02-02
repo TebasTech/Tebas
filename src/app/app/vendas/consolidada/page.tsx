@@ -174,14 +174,19 @@ export default function VendasConsolidadaPage() {
     setRows((prev) => prev.filter((r) => r.id !== id))
   }
 
-  function addRow() {
+  function addRow(focus = true) {
     setRows((prev) => [...prev, newRow()])
+    if (focus) setTimeout(() => focusLastDescription(), 50)
+  }
+
+  function focusLastDescription() {
+    const el = document.querySelector<HTMLInputElement>('input[data-last="1"]')
+    el?.focus()
   }
 
   function applyProductFromCode(row: Row, codeStr: string) {
     const code = parseCodigoStrict(codeStr)
-    if (code === null)
-      return { productId: "", unitPrice: 0, total: 0, descStr: "", error: "Use ID com asterisco. Ex: 1*" }
+    if (code === null) return { productId: "", unitPrice: 0, total: 0, descStr: "", error: "Use ID com asterisco. Ex: 1*" }
 
     const p = productsByCode.get(code)
     if (!p) return { productId: "", unitPrice: 0, total: 0, descStr: "", error: "ID não encontrado." }
@@ -222,6 +227,15 @@ export default function VendasConsolidadaPage() {
         return { ...r, total: newTotal, receivedStr }
       })
     )
+  }
+
+  function maybeAddRowOnEnter(e: React.KeyboardEvent, rowIndex: number) {
+    if (e.key !== "Enter") return
+    // Enter cria nova linha se for a última linha
+    if (rowIndex === rows.length - 1) {
+      e.preventDefault()
+      addRow(true)
+    }
   }
 
   async function saveAll() {
@@ -295,7 +309,7 @@ export default function VendasConsolidadaPage() {
             product_id: r.productId,
             qty: round3(Math.max(0.001, toNumberBR(r.qtyStr))),
             discount_pct: 0,
-            line_total: r.total,
+            total_final: r.total,
           },
         ],
         p_customer_id: r.customerId ? r.customerId : null,
@@ -326,7 +340,7 @@ export default function VendasConsolidadaPage() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Vendas Consolidada</h1>
           <p className="text-sm text-slate-600 mt-1">
-            Para lançar vendas anotadas. Use <b>ID*</b> ou digite a descrição e selecione na lista.
+            Digite a descrição (lista) ou o ID*. Enter na última linha cria uma nova.
           </p>
         </div>
 
@@ -349,9 +363,7 @@ export default function VendasConsolidadaPage() {
       </div>
 
       {errorMsg ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {errorMsg}
-        </div>
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMsg}</div>
       ) : null}
 
       {okMsg ? (
@@ -365,7 +377,7 @@ export default function VendasConsolidadaPage() {
           <div className="text-sm font-semibold text-slate-900">Lançamento rápido</div>
 
           <button
-            onClick={addRow}
+            onClick={() => addRow(true)}
             className="h-10 px-4 rounded-2xl bg-white border border-black/10 text-slate-900 text-sm font-semibold hover:bg-slate-50"
           >
             + Linha
@@ -400,6 +412,7 @@ export default function VendasConsolidadaPage() {
               <tbody className="bg-white">
                 {rows.map((r, idx) => {
                   const hasErr = Boolean(r.error)
+                  const isLast = idx === rows.length - 1
 
                   return (
                     <tr
@@ -411,6 +424,7 @@ export default function VendasConsolidadaPage() {
                           type="date"
                           value={r.dateISO}
                           onChange={(e) => updateRow(r.id, { dateISO: e.target.value, error: "" })}
+                          onKeyDown={(e) => maybeAddRowOnEnter(e, idx)}
                           className="w-[150px] h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                         />
                       </td>
@@ -419,6 +433,7 @@ export default function VendasConsolidadaPage() {
                         <select
                           value={r.customerId}
                           onChange={(e) => updateRow(r.id, { customerId: e.target.value, error: "" })}
+                          onKeyDown={(e) => maybeAddRowOnEnter(e, idx)}
                           className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                         >
                           {customerOptions.map((c) => (
@@ -432,34 +447,29 @@ export default function VendasConsolidadaPage() {
                       <td className="px-4 py-3">
                         <input
                           ref={idx === 0 ? firstDescRef : undefined}
+                          data-last={isLast ? "1" : "0"}
                           list="products-datalist"
                           value={r.descStr}
                           onChange={(e) => {
                             const v = e.target.value
                             const patch = applyProductFromDesc(r, v)
-
-                            // total calculado
                             const newTotal = patch.total
-                            const receivedStr = r.receivedTouched ? r.receivedStr : formatMoney(newTotal)
 
                             updateRow(r.id, {
                               descStr: v,
                               productId: patch.productId,
                               unitPrice: patch.unitPrice,
                               total: newTotal,
-                              receivedStr,
+                              receivedStr: r.receivedTouched ? r.receivedStr : formatMoney(newTotal),
                               codeStr: patch.codeStr || r.codeStr,
                               error: patch.error || "",
                             })
                           }}
+                          onKeyDown={(e) => maybeAddRowOnEnter(e, idx)}
                           className="w-[420px] h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                           placeholder="Digite a descrição e selecione..."
                         />
-                        {r.error ? (
-                          <div className="text-xs text-red-700 mt-1">{r.error}</div>
-                        ) : (
-                          <div className="text-xs text-slate-500 mt-1">Use vírgula no decimal. Ex: 1,5</div>
-                        )}
+                        {r.error ? <div className="text-xs text-red-700 mt-1">{r.error}</div> : null}
                       </td>
 
                       <td className="px-4 py-3">
@@ -469,27 +479,25 @@ export default function VendasConsolidadaPage() {
                             const v = e.target.value
                             const patch = applyProductFromCode(r, v)
                             const newTotal = patch.total
-                            const receivedStr = r.receivedTouched ? r.receivedStr : formatMoney(newTotal)
 
                             updateRow(r.id, {
                               codeStr: v,
                               productId: patch.productId,
                               unitPrice: patch.unitPrice,
                               total: newTotal,
-                              receivedStr,
+                              receivedStr: r.receivedTouched ? r.receivedStr : formatMoney(newTotal),
                               descStr: patch.descStr || r.descStr,
                               error: patch.error || "",
                             })
                           }}
+                          onKeyDown={(e) => maybeAddRowOnEnter(e, idx)}
                           className="w-[92px] h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                           placeholder="1*"
                           inputMode="text"
                         />
                       </td>
 
-                      <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                        R$ {formatMoney(r.unitPrice)}
-                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-900">R$ {formatMoney(r.unitPrice)}</td>
 
                       <td className="px-4 py-3 text-right">
                         <input
@@ -497,35 +505,28 @@ export default function VendasConsolidadaPage() {
                           onChange={(e) => {
                             const v = e.target.value
                             const rr = r.productId ? recalcRowTotal(r.productId, v) : { unitPrice: 0, total: 0 }
-
-                            const receivedStr = r.receivedTouched ? r.receivedStr : formatMoney(rr.total)
-
                             updateRow(r.id, {
                               qtyStr: v,
                               unitPrice: rr.unitPrice,
                               total: rr.total,
-                              receivedStr,
+                              receivedStr: r.receivedTouched ? r.receivedStr : formatMoney(rr.total),
                               error: "",
                             })
                           }}
+                          onKeyDown={(e) => maybeAddRowOnEnter(e, idx)}
                           className="w-[92px] text-right h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                           placeholder="1,5"
                           inputMode="decimal"
                         />
                       </td>
 
-                      {/* ✅ Valor total: somente leitura */}
-                      <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                        R$ {formatMoney(r.total)}
-                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-900">R$ {formatMoney(r.total)}</td>
 
-                      {/* ✅ Valor recebido: pré-preenchido com o total, mas editável */}
                       <td className="px-4 py-3 text-right">
                         <input
                           value={r.receivedStr}
-                          onChange={(e) =>
-                            updateRow(r.id, { receivedStr: e.target.value, receivedTouched: true, error: "" })
-                          }
+                          onChange={(e) => updateRow(r.id, { receivedStr: e.target.value, receivedTouched: true, error: "" })}
+                          onKeyDown={(e) => maybeAddRowOnEnter(e, idx)}
                           className="w-[120px] text-right h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                           placeholder="0,00"
                           inputMode="decimal"
@@ -535,7 +536,7 @@ export default function VendasConsolidadaPage() {
                       <td className="px-4 py-3">
                         <button
                           onClick={() => removeRow(r.id)}
-                          className="h-10 px-3 rounded-2xl bg-white border border-black/10 text-slate-900 text-xs font-semibold hover:bg-slate-50"
+                          className="h-10 px-3 rounded-2xl bg-white border border-black/10 text-slate-900 text-xs font-semibold hover:bg-slate-50 disabled:opacity-60"
                           disabled={rows.length === 1}
                         >
                           Remover
@@ -548,7 +549,7 @@ export default function VendasConsolidadaPage() {
             </table>
 
             <div className="px-5 py-4 text-xs text-slate-500 border-t border-black/5">
-              Dica: escolha pela <b>Descrição</b> (lista) ou pelo <b>ID*</b>. Um preenche o outro automaticamente.
+              Dica: Enter na última linha cria uma nova (modo planilha).
             </div>
           </div>
         )}

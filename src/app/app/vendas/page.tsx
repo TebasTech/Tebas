@@ -56,6 +56,16 @@ type CartLine = {
   lineTotalStr: string
 }
 
+type SaleItemDetail = {
+  product_id: string
+  qty: number
+  discount_pct: number
+  total_final: number
+  descricao: string
+  marca: string | null
+  codigo: number | null
+}
+
 const PAGAMENTOS = ["Dinheiro", "Cartão", "Pix"] as const
 
 export default function VendasPage() {
@@ -68,7 +78,6 @@ export default function VendasPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [inventory, setInventory] = useState<InventoryRow[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
-
   const [history, setHistory] = useState<SaleRow[]>([])
 
   const [loading, setLoading] = useState(true)
@@ -81,12 +90,18 @@ export default function VendasPage() {
   const [customerId, setCustomerId] = useState<string>("")
 
   const [cart, setCart] = useState<CartLine[]>([])
-  const [lastSale, setLastSale] = useState<{ sale_number: number; total: number } | null>(null)
+  const [lastSale, setLastSale] = useState<{ sale_number: number; received: number } | null>(null)
 
   // desconto geral (cruzado com valor recebido)
   const [overallDiscountPctStr, setOverallDiscountPctStr] = useState("0")
   const [receivedStr, setReceivedStr] = useState("0,00")
   const overallTouchedRef = useRef<"pct" | "received" | null>(null)
+
+  // modal detalhes
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailSale, setDetailSale] = useState<SaleRow | null>(null)
+  const [detailItems, setDetailItems] = useState<SaleItemDetail[]>([])
 
   async function getStoreIdOrRedirect(): Promise<{ storeId: string; userId: string } | null> {
     setErrorMsg(null)
@@ -147,7 +162,10 @@ export default function VendasPage() {
       .eq("store_id", currentStoreId)
       .order("created_at", { ascending: false })
       .order("sale_number", { ascending: false })
-      .limit(200)
+      .limit(300)
+
+    if (cRes.error) setErrorMsg(`Erro ao carregar customers: ${cRes.error.message}`)
+    if (sRes.error) setErrorMsg(`Erro ao carregar sales (histórico): ${sRes.error.message}`)
 
     if (pRes.error) {
       setProducts([])
@@ -227,6 +245,47 @@ export default function VendasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // atalhos teclado (não atrapalhar quando o usuário está digitando em inputs)
+  useEffect(() => {
+    function isTyping() {
+      const el = document.activeElement as HTMLElement | null
+      if (!el) return false
+      return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT"
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "F2") {
+        e.preventDefault()
+        if (saving) return
+        finalizeSale()
+        return
+      }
+      if (e.key === "F3") {
+        e.preventDefault()
+        if (saving) return
+        clearCart()
+        setTimeout(() => codeRef.current?.focus(), 0)
+        return
+      }
+      if (e.key === "Enter") {
+        // Enter no campo de ID adiciona rapidamente
+        const active = document.activeElement
+        if (active === codeRef.current) {
+          e.preventDefault()
+          tryAddByCodeOrSuggestion()
+          return
+        }
+      }
+
+      // evita atalhos atrapalhando inputs (exceto os casos acima)
+      if (isTyping()) return
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saving, codeInput, products, cart, storeId, userId, payment, customerId, overallDiscountPctStr, receivedStr])
+
   const inventoryByProductId = useMemo(() => {
     const map = new Map<string, InventoryRow>()
     for (const row of inventory) map.set(row.product_id, row)
@@ -239,15 +298,7 @@ export default function VendasPage() {
 
     return products
       .filter((p) => {
-        const blob = [
-          formatCodigo(p.codigo),
-          p.tipo,
-          p.descricao,
-          p.marca ?? "",
-          p.fornecedor ?? "",
-        ]
-          .join(" ")
-          .toLowerCase()
+        const blob = [formatCodigo(p.codigo), p.tipo, p.descricao, p.marca ?? "", p.fornecedor ?? ""].join(" ").toLowerCase()
         return blob.includes(term)
       })
       .slice(0, 80)
@@ -266,7 +317,6 @@ export default function VendasPage() {
     return round2(total)
   }, [cartSubtotal, overallPct])
 
-  // quando desconto muda, recalcula "Valor recebido" (a não ser que o usuário esteja mexendo no recebido)
   useEffect(() => {
     if (overallTouchedRef.current === "received") return
     setReceivedStr(formatMoney(cartTotalFinal))
@@ -298,11 +348,7 @@ export default function VendasPage() {
       const pct = clampPct(toNumberBR(old.discountPctStr))
       const total = round2(base * (1 - pct / 100))
 
-      copy[idx] = {
-        ...old,
-        qtyStr: formatQtyBR(newQty),
-        lineTotalStr: formatMoney(total),
-      }
+      copy[idx] = { ...old, qtyStr: formatQtyBR(newQty), lineTotalStr: formatMoney(total) }
       return copy
     })
   }
@@ -368,7 +414,6 @@ export default function VendasPage() {
     return Math.trunc(n)
   }
 
-  // sugestão por ID (mesmo antes do asterisco)
   const codeSuggestion = useMemo(() => {
     const t = codeInput.trim()
     if (!t) return null
@@ -381,9 +426,21 @@ export default function VendasPage() {
     return p
   }, [codeInput, products])
 
-  function tryAddByCode() {
+  function pickSuggestion(p: Product) {
     setErrorMsg(null)
+    addToCart(p, 1)
+    setCodeInput("")
+    setTimeout(() => codeRef.current?.focus(), 0)
+  }
 
+  function tryAddByCodeOrSuggestion() {
+    // se existe sugestão, adiciona direto (rápido), mesmo sem asterisco
+    if (codeSuggestion) {
+      pickSuggestion(codeSuggestion)
+      return
+    }
+
+    setErrorMsg(null)
     const code = parseCodigoFromInputStrict(codeInput)
     if (code === null) {
       setErrorMsg("Para evitar confusão, use o formato: 1* (com asterisco).")
@@ -397,21 +454,8 @@ export default function VendasPage() {
     }
 
     addToCart(p, 1)
-
-    // ✅ limpa automaticamente
     setCodeInput("")
     setTimeout(() => codeRef.current?.focus(), 0)
-  }
-
-  function pickSuggestion(p: Product) {
-    setErrorMsg(null)
-    setCodeInput(formatCodigo(p.codigo))
-    // adiciona direto (mais rápido)
-    setTimeout(() => {
-      addToCart(p, 1)
-      setCodeInput("")
-      codeRef.current?.focus()
-    }, 0)
   }
 
   function onChangeOverallPct(v: string) {
@@ -419,7 +463,6 @@ export default function VendasPage() {
     setOverallDiscountPctStr(v)
   }
 
-  // recebido editável: recalcula desconto geral
   function onChangeReceived(v: string) {
     overallTouchedRef.current = "received"
     setReceivedStr(v)
@@ -472,10 +515,9 @@ export default function VendasPage() {
       product_id: l.product.id,
       qty: round3(Math.max(0.001, toNumberBR(l.qtyStr))),
       discount_pct: clampPct(toNumberBR(l.discountPctStr)),
-      line_total: round2(toMoneyNumber(l.lineTotalStr)),
+      total_final: round2(toMoneyNumber(l.lineTotalStr)),
     }))
 
-    // ✅ recebido = total final (editável)
     const received = round2(toMoneyNumber(receivedStr))
 
     const { data, error } = await supabase.rpc("create_sale", {
@@ -497,24 +539,75 @@ export default function VendasPage() {
 
     const row = Array.isArray(data) ? data[0] : data
     const saleNumber = Number(row?.sale_number)
-    const saleTotal = Number(row?.total)
-
-    setLastSale({
-      sale_number: Number.isFinite(saleNumber) ? saleNumber : 0,
-      total: Number.isFinite(saleTotal) ? saleTotal : received,
-    })
+    setLastSale({ sale_number: Number.isFinite(saleNumber) ? saleNumber : 0, received })
 
     await loadAll(storeId)
 
-    setCart([])
-    setSaving(false)
+    clearCart()
     setCodeInput("")
     setQ("")
     setCustomerId("")
-    setOverallDiscountPctStr("0")
-    setReceivedStr("0,00")
-    overallTouchedRef.current = null
     setTimeout(() => codeRef.current?.focus(), 80)
+    setSaving(false)
+  }
+
+  async function openDetail(s: SaleRow) {
+    if (!storeId) return
+    setDetailSale(s)
+    setDetailItems([])
+    setDetailOpen(true)
+    setDetailLoading(true)
+    setErrorMsg(null)
+
+    // carrega itens
+    const itemsRes = await supabase
+      .from("sale_items")
+      .select("product_id, qty, discount_pct, total_final")
+      .eq("sale_id", s.id)
+
+    if (itemsRes.error) {
+      setErrorMsg(`Erro ao carregar itens: ${itemsRes.error.message}`)
+      setDetailLoading(false)
+      return
+    }
+
+    const items = (itemsRes.data as any[]) ?? []
+    const ids = items.map((x) => x.product_id).filter(Boolean)
+
+    let prods: any[] = []
+    if (ids.length > 0) {
+      const prodRes = await supabase
+        .from("products")
+        .select("id, codigo, descricao, marca")
+        .eq("store_id", storeId)
+        .in("id", ids)
+
+      if (!prodRes.error) prods = (prodRes.data as any[]) ?? []
+    }
+
+    const prodById = new Map(prods.map((p) => [p.id, p]))
+
+    const mapped: SaleItemDetail[] = items.map((it) => {
+      const p = prodById.get(it.product_id)
+      return {
+        product_id: it.product_id,
+        qty: Number(it.qty ?? 0),
+        discount_pct: Number(it.discount_pct ?? 0),
+        total_final: Number(it.total_final ?? 0),
+        descricao: p?.descricao ?? "—",
+        marca: p?.marca ?? null,
+        codigo: p?.codigo ?? null,
+      }
+    })
+
+    setDetailItems(mapped)
+    setDetailLoading(false)
+  }
+
+  function closeDetail() {
+    setDetailOpen(false)
+    setDetailSale(null)
+    setDetailItems([])
   }
 
   async function deleteSale(saleId: string) {
@@ -553,33 +646,66 @@ export default function VendasPage() {
     }
   }
 
+  function exportCSV() {
+    const rows = [...history].sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
+    const header = ["Data", "Venda", "Cliente", "Pagamento", "Itens", "Total", "Recebido"].join(";") + "\n"
+    const lines = rows
+      .map((s) => {
+        return [
+          formatDateTimeBR(s.created_at),
+          String(s.sale_number),
+          safeCsv(s.customer_name),
+          safeCsv(s.payment_method ?? ""),
+          String(s.items_count),
+          formatMoney(s.total),
+          s.received_total === null ? "" : formatMoney(s.received_total),
+        ].join(";")
+      })
+      .join("\n")
+
+    const blob = new Blob([header + lines], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "historico_vendas.csv"
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Vendas</h1>
           <p className="text-sm text-slate-600 mt-1">
-            Cliente opcional. Para adicionar por ID use: <b>1*</b>.
+            Cliente opcional. Para adicionar por ID use: <b>1*</b>. Atalhos: <b>F2</b> concluir, <b>F3</b> limpar.
           </p>
         </div>
 
-        <Link
-          href="/app/vendas/consolidada"
-          className="h-11 px-5 rounded-2xl bg-[#0B2A4A] text-white text-sm font-semibold hover:brightness-95 w-full md:w-auto inline-flex items-center justify-center"
-        >
-          Consolidada
-        </Link>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <button
+            onClick={exportCSV}
+            className="h-11 px-5 rounded-2xl bg-white border border-black/10 text-slate-900 text-sm font-semibold hover:bg-slate-50 w-full sm:w-auto"
+          >
+            Exportar Excel
+          </button>
+
+          <Link
+            href="/app/vendas/consolidada"
+            className="h-11 px-5 rounded-2xl bg-[#0B2A4A] text-white text-sm font-semibold hover:brightness-95 w-full sm:w-auto inline-flex items-center justify-center"
+          >
+            Consolidada
+          </Link>
+        </div>
       </div>
 
       {errorMsg ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {errorMsg}
-        </div>
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMsg}</div>
       ) : null}
 
       {lastSale ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          Venda <b>#{lastSale.sale_number}</b> finalizada. Recebido: <b>R$ {formatMoney(lastSale.total)}</b>
+          Venda <b>#{lastSale.sale_number}</b> finalizada. Recebido: <b>R$ {formatMoney(lastSale.received)}</b>
         </div>
       ) : null}
 
@@ -610,13 +736,12 @@ export default function VendasPage() {
                       ref={codeRef}
                       value={codeInput}
                       onChange={(e) => setCodeInput(e.target.value)}
-                      onKeyDown={(e) => (e.key === "Enter" ? tryAddByCode() : null)}
                       placeholder="Ex: 12*"
                       className="w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                       inputMode="text"
                     />
                     <button
-                      onClick={tryAddByCode}
+                      onClick={tryAddByCodeOrSuggestion}
                       className="h-11 px-4 rounded-2xl bg-[#22C55E] text-white text-sm font-semibold hover:brightness-95"
                     >
                       Add
@@ -641,7 +766,7 @@ export default function VendasPage() {
                   </div>
                 ) : null}
 
-                <div className="text-xs text-slate-500 mt-1">Use o asterisco para evitar confusão (1 vs 10).</div>
+                <div className="text-xs text-slate-500 mt-1">Dica: digite o ID e clique na sugestão para adicionar rápido.</div>
               </div>
             </div>
 
@@ -704,9 +829,7 @@ export default function VendasPage() {
                               {p.tipo} • {p.marca || "Outros"}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                            R$ {formatMoney(p.preco)}
-                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">R$ {formatMoney(p.preco)}</td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatQtyBR(qtd)}</td>
                           <td className="px-4 py-3 text-slate-800">{uni}</td>
                         </tr>
@@ -727,7 +850,10 @@ export default function VendasPage() {
             </div>
 
             <button
-              onClick={clearCart}
+              onClick={() => {
+                clearCart()
+                setTimeout(() => codeRef.current?.focus(), 0)
+              }}
               className="h-10 px-4 rounded-2xl bg-white border border-black/10 text-slate-900 text-sm font-semibold hover:bg-slate-50"
             >
               Limpar
@@ -756,8 +882,8 @@ export default function VendasPage() {
                         <div>
                           <div className="font-semibold text-slate-900">{l.product.descricao}</div>
                           <div className="text-xs text-slate-600 mt-1">
-                            ID {formatCodigo(l.product.codigo)} • R$ {formatMoney(l.product.preco)} • Base: R${" "}
-                            {formatMoney(base)} • Estoque: {formatQtyBR(qtdStock)} {uni}
+                            ID {formatCodigo(l.product.codigo)} • R$ {formatMoney(l.product.preco)} • Base: R$ {formatMoney(base)} • Estoque:{" "}
+                            {formatQtyBR(qtdStock)} {uni}
                           </div>
                           {low ? (
                             <div className="text-xs text-red-600 mt-2">
@@ -882,6 +1008,10 @@ export default function VendasPage() {
                   </button>
                 </div>
               </div>
+
+              <div className="text-xs text-slate-600">
+                Dica: <b>F2</b> conclui, <b>F3</b> limpa.
+              </div>
             </div>
           </div>
         </section>
@@ -891,7 +1021,7 @@ export default function VendasPage() {
         <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold text-slate-900">Histórico de vendas</div>
-            <div className="text-xs text-slate-600 mt-1">Remova ou ajuste dados básicos (cliente, pagamento, recebido).</div>
+            <div className="text-xs text-slate-600 mt-1">Clique numa venda para ver detalhes. Remover estorna o estoque.</div>
           </div>
         </div>
 
@@ -899,7 +1029,7 @@ export default function VendasPage() {
           <div className="px-5 py-6 text-sm text-slate-600">Carregando…</div>
         ) : (
           <div className="overflow-auto">
-            <table className="w-full text-sm min-w-[1180px]">
+            <table className="w-full text-sm min-w-[1220px]">
               <thead className="bg-slate-50 text-slate-700">
                 <tr>
                   <th className="text-left font-semibold px-4 py-3">Data</th>
@@ -922,16 +1052,19 @@ export default function VendasPage() {
                   </tr>
                 ) : (
                   history.map((s) => (
-                    <tr key={s.id} className="border-t border-black/5 hover:bg-slate-50/60">
+                    <tr
+                      key={s.id}
+                      className="border-t border-black/5 hover:bg-slate-50/60 cursor-pointer"
+                      onClick={() => openDetail(s)}
+                      title="Clique para ver detalhes"
+                    >
                       <td className="px-4 py-3 text-slate-800">{formatDateTimeBR(s.created_at)}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">#{s.sale_number}</td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <select
                           value={s.customer_id ?? ""}
-                          onChange={(e) =>
-                            updateSaleInline(s.id, { customer_id: e.target.value ? e.target.value : null })
-                          }
+                          onChange={(e) => updateSaleInline(s.id, { customer_id: e.target.value ? e.target.value : null })}
                           className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                         >
                           <option value="">Indefinido</option>
@@ -945,7 +1078,7 @@ export default function VendasPage() {
 
                       <td className="px-4 py-3 text-right font-semibold text-slate-900">{s.items_count}</td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <select
                           value={s.payment_method ?? "Dinheiro"}
                           onChange={(e) => updateSaleInline(s.id, { payment_method: e.target.value })}
@@ -959,11 +1092,9 @@ export default function VendasPage() {
                         </select>
                       </td>
 
-                      <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                        R$ {formatMoney(s.total)}
-                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-900">R$ {formatMoney(s.total)}</td>
 
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                         <input
                           defaultValue={s.received_total === null ? "" : formatMoney(s.received_total)}
                           onBlur={(e) => {
@@ -977,7 +1108,7 @@ export default function VendasPage() {
                         />
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => deleteSale(s.id)}
                           className="h-10 px-4 rounded-2xl bg-white border border-red-200 text-red-700 text-xs font-semibold hover:bg-red-50"
@@ -997,8 +1128,90 @@ export default function VendasPage() {
           </div>
         )}
       </section>
+
+      {detailOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={closeDetail} />
+          <div className="absolute left-1/2 top-1/2 w-[94vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white border border-black/10 shadow-xl">
+            <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between">
+              <div>
+                <div className="text-base font-semibold text-slate-900">
+                  Detalhes da venda {detailSale ? `#${detailSale.sale_number}` : ""}
+                </div>
+                <div className="text-xs text-slate-600 mt-1">
+                  {detailSale ? `${formatDateTimeBR(detailSale.created_at)} • ${detailSale.customer_name}` : "—"}
+                </div>
+              </div>
+
+              <button
+                onClick={closeDetail}
+                className="h-10 px-4 rounded-2xl bg-white border border-black/10 text-slate-900 text-sm font-semibold hover:bg-slate-50"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {detailLoading ? (
+                <div className="text-sm text-slate-600">Carregando itens…</div>
+              ) : detailItems.length === 0 ? (
+                <div className="rounded-2xl border border-black/10 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+                  Nenhum item encontrado.
+                </div>
+              ) : (
+                <div className="overflow-auto">
+                  <table className="w-full text-sm min-w-[820px]">
+                    <thead className="bg-slate-50 text-slate-700">
+                      <tr>
+                        <th className="text-left font-semibold px-4 py-3">ID</th>
+                        <th className="text-left font-semibold px-4 py-3">Item</th>
+                        <th className="text-right font-semibold px-4 py-3">Qtd</th>
+                        <th className="text-right font-semibold px-4 py-3">Desc (%)</th>
+                        <th className="text-right font-semibold px-4 py-3">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white">
+                      {detailItems.map((it, idx) => (
+                        <tr key={idx} className="border-t border-black/5">
+                          <td className="px-4 py-3 font-semibold text-slate-900">{formatCodigo(it.codigo)}</td>
+                          <td className="px-4 py-3 text-slate-800">
+                            <div className="font-semibold">{it.descricao}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">{it.marca || "Outros"}</div>
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatQtyBR(it.qty)}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatPctBR(it.discount_pct)}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">R$ {formatMoney(it.total_final)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="rounded-2xl bg-[#EAF7FF] border border-black/5 p-4 flex items-center justify-between">
+                <div className="text-sm font-semibold text-slate-900">Total</div>
+                <div className="text-xl font-semibold text-slate-900">
+                  R$ {detailSale ? formatMoney(detailSale.total) : "0,00"}
+                </div>
+              </div>
+
+              {detailSale?.received_total !== null && detailSale?.received_total !== undefined ? (
+                <div className="rounded-2xl border border-black/10 bg-slate-50 px-4 py-3 text-sm text-slate-800 flex items-center justify-between">
+                  <div className="font-semibold text-slate-900">Recebido</div>
+                  <div className="font-semibold text-slate-900">R$ {formatMoney(detailSale.received_total)}</div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
+}
+
+function safeCsv(s: string) {
+  const t = (s ?? "").replace(/\r?\n/g, " ").trim()
+  return t.replace(/;/g, ",")
 }
 
 function formatCodigo(codigo: number | null) {
