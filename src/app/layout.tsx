@@ -19,11 +19,30 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <div className="flex-1 flex flex-col">
             <Topbar />
 
-            <main className="flex-1 overflow-auto bg-[rgb(var(--tebas-bg))] p-6">
+            <main className="flex-1 overflow-auto bg-[#EAF7FF] p-6">
               <div className="min-h-[calc(100vh-6rem)] rounded-2xl bg-white border border-black/5 shadow-sm p-6">
                 {children}
               </div>
             </main>
+            <a
+  href="https://wa.me/400778756849?text=Ol%C3%A1%20Tebas%20Tech!%20Preciso%20de%20ajuda%20no%20sistema."
+  target="_blank"
+  rel="noreferrer"
+  className="fixed bottom-5 left-5 z-50 inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#22C55E] shadow-lg hover:brightness-95"
+  aria-label="Falar com suporte no WhatsApp"
+  title="Falar com suporte no WhatsApp"
+>
+  <svg
+    viewBox="0 0 32 32"
+    fill="currentColor"
+    className="h-5 w-5 text-white"
+    aria-hidden="true"
+  >
+    <path d="M19.11 17.53c-.27-.14-1.6-.79-1.84-.88-.25-.09-.43-.14-.61.14-.18.27-.7.88-.86 1.06-.16.18-.32.2-.59.07-.27-.14-1.14-.42-2.17-1.33-.8-.71-1.34-1.59-1.5-1.86-.16-.27-.02-.41.12-.55.12-.12.27-.32.41-.48.14-.16.18-.27.27-.45.09-.18.05-.34-.02-.48-.07-.14-.61-1.47-.84-2.02-.22-.53-.45-.46-.61-.46l-.52-.01c-.18 0-.48.07-.73.34-.25.27-.95.93-.95 2.27 0 1.33.98 2.62 1.12 2.8.14.18 1.93 2.95 4.68 4.13.65.28 1.16.45 1.56.57.66.21 1.26.18 1.73.11.53-.08 1.6-.65 1.83-1.27.23-.62.23-1.15.16-1.27-.07-.12-.25-.2-.52-.34z" />
+    <path d="M26.64 5.36A13.1 13.1 0 0016.02 1C8.84 1 3 6.84 3 14.02c0 2.3.6 4.55 1.74 6.54L3 31l10.7-1.68a12.98 12.98 0 006.32 1.62h.01C27.2 30.94 33 25.1 33 17.92c0-3.49-1.36-6.77-3.83-9.23zM16.03 28.7h-.01a10.8 10.8 0 01-5.51-1.52l-.4-.24-6.35 1 1.04-6.19-.26-.44a10.77 10.77 0 01-1.63-5.73C2.92 8.06 8.07 2.9 14.44 2.9c2.88 0 5.58 1.12 7.61 3.15a10.7 10.7 0 013.16 7.6c0 6.37-5.16 11.53-11.18 11.05z" />
+  </svg>
+</a>
+
           </div>
         </div>
       </body>
@@ -33,60 +52,54 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
 function Sidebar() {
   return (
-    <aside className="w-[280px] bg-[rgb(var(--tebas-sidebar))] text-white flex flex-col">
-      {/* Brand (logo + logotipo) */}
-      <div className="px-6 py-5 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-white/10 flex items-center justify-center overflow-hidden">
-            <Image
-              src="/logo.png"
-              alt="Tebas Tech"
-              width={40}
-              height={40}
-              className="h-10 w-10 object-contain"
-              priority
-            />
-          </div>
-
-          <div className="leading-tight">
-            <Image
-              src="/logotipo.png"
-              alt="Tebas Tech"
-              width={140}
-              height={24}
-              className="h-6 w-auto object-contain"
-              priority
-            />
-            <div className="text-xs opacity-70 mt-1">Gestão simples. Lucro claro.</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Menu */}
-      <nav className="flex-1 px-3 py-4 space-y-1 text-[14px]">
-        <NavItem href="/" label="Visão Geral" icon={<IconGrid />} />
-        <NavItem href="/loja" label="Loja" icon={<IconStore />} />
-        <NavItem href="/estoque" label="Estoque" icon={<IconBoxes />} />
-        <NavItem href="/produtos" label="Produtos" icon={<IconTag />} />
-        <NavItem href="/clientes" label="Clientes" icon={<IconUser />} />
-        <NavItem href="/vendas" label="Vendas" icon={<IconCart />} />
-        <NavItem
-          href="/financeiro"
-          label="Compras & Despesas"
-          icon={<IconWallet />}
+    <>
+      {/* MOBILE HEADER */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-white border-b border-black/5 flex items-center px-4 z-50">
+        <Image
+          src="/logos4.png"
+          alt="Tebas Tech"
+          width={140}
+          height={40}
+          className="h-8 w-auto object-contain"
         />
-        <NavItem href="/marketing" label="Marketing" icon={<IconMegaphone />} />
-        <NavItem href="/estatisticas" label="Estatísticas" icon={<IconChart />} />
-        <NavItem href="/ajuda" label="Ajuda" icon={<IconHelp />} />
-      </nav>
-
-      {/* Footer */}
-      <div className="px-6 py-4 border-t border-white/10 text-xs opacity-70">
-        Tebas Tech • v0.1
       </div>
-    </aside>
+
+      {/* DESKTOP SIDEBAR */}
+      <aside className="hidden md:flex w-[290px] flex-col border-r border-black/5 bg-gradient-to-b from-[#D6F2FF] via-[#C6EDFF] to-[#B8E8FF]">
+        {/* LOGO */}
+        <div className="px-4 pt-4 pb-3 border-b border-black/5">
+          <Image
+            src="/logos4.png"
+            alt="Tebas Tech"
+            width={800}
+            height={220}
+            className="w-full h-auto object-contain"
+            priority
+          />
+        </div>
+
+        {/* MENU */}
+        <div className="flex-1 px-4 py-4">
+          <nav className="h-full rounded-3xl bg-white/50 border border-[#7DD9FF] p-2 flex flex-col gap-2">
+            <NavItem href="/app/loja" label="Loja" icon={<IconStore />} />
+            <NavItem href="/app/estoque" label="Estoque" icon={<IconBoxes />} />
+            <NavItem href="/app/produtos" label="Produtos" icon={<IconTag />} />
+            <NavItem href="/app/clientes" label="Clientes" icon={<IconUser />} />
+            <NavItem href="/app/vendas" label="Vendas" icon={<IconCart />} />
+            <NavItem href="/app/financeiro" label="Compras & Despesas" icon={<IconWallet />} />
+            <NavItem href="/app/marketing" label="Marketing" icon={<IconMegaphone />} />
+            <NavItem href="/app/estatisticas" label="Estatísticas" icon={<IconChart />} />
+
+            <div className="mt-auto">
+              <NavItem href="/app/ajuda" label="Ajuda" icon={<IconHelp />} />
+            </div>
+          </nav>
+        </div>
+      </aside>
+    </>
   )
 }
+
 
 function Topbar() {
   return (
@@ -95,7 +108,7 @@ function Topbar() {
         <div className="relative w-full">
           <input
             placeholder="Buscar… (produto, cliente, venda)"
-            className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-4 pr-10 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+            className="w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 pr-10 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50">
             <IconSearch />
@@ -104,22 +117,11 @@ function Topbar() {
       </div>
 
       <div className="flex items-center gap-3">
-        <button className="h-10 px-4 rounded-xl bg-[rgb(var(--tebas-primary))] text-white text-sm font-semibold hover:opacity-90">
+        <button className="h-11 px-5 rounded-2xl bg-[#00D6FF] text-slate-900 text-sm font-semibold hover:brightness-95">
           + Produto
         </button>
 
-        <div className="flex items-center gap-2 pl-1">
-          <div className="h-9 w-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden">
-            <Image
-              src="/logo.png"
-              alt="Tebas Tech"
-              width={36}
-              height={36}
-              className="h-9 w-9 object-contain"
-            />
-          </div>
-          <div className="text-sm text-slate-700">Conta</div>
-        </div>
+        <div className="text-sm text-slate-700 pl-1">Conta</div>
       </div>
     </header>
   )
@@ -137,27 +139,15 @@ function NavItem({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 rounded-xl px-4 py-3 text-white/90 hover:bg-white/10 transition"
+      className="flex items-center gap-3 rounded-2xl px-4 py-2.5 bg-[#BFEAFF] border border-[#7DD9FF] text-slate-900 hover:bg-[#AEE3FF] transition"
     >
-      <span className="opacity-90">{icon}</span>
-      <span className="font-medium">{label}</span>
+      <span className="text-slate-700">{icon}</span>
+      <span className="font-semibold text-[13px]">{label}</span>
     </Link>
   )
 }
 
-/* ----- Inline icons ----- */
-
-function IconGrid() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-    </svg>
-  )
-}
+/* ----- Icons ----- */
 
 function IconStore() {
   return (
@@ -212,11 +202,7 @@ function IconTag() {
 function IconUser() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M20 21a8 8 0 1 0-16 0"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
+      <path d="M20 21a8 8 0 1 0-16 0" stroke="currentColor" strokeWidth="2" />
       <path
         d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"
         stroke="currentColor"
@@ -276,12 +262,7 @@ function IconMegaphone() {
         strokeWidth="2"
         strokeLinejoin="round"
       />
-      <path
-        d="M21 9v6"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <path d="M21 9v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }
@@ -319,12 +300,7 @@ function IconHelp() {
         strokeWidth="2"
         strokeLinecap="round"
       />
-      <path
-        d="M12 17h.01"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
+      <path d="M12 17h.01" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     </svg>
   )
 }
