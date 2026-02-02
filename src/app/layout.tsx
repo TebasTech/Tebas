@@ -103,29 +103,14 @@ function Sidebar() {
 
 function Topbar() {
   return (
-    <header className="h-16 bg-white border-b border-black/5 flex items-center justify-between px-6">
-      <div className="flex items-center gap-3 w-full max-w-xl">
-        <div className="relative w-full">
-          <input
-            placeholder="Buscar… (produto, cliente, venda)"
-            className="w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 pr-10 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
-          />
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50">
-            <IconSearch />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <button className="h-11 px-5 rounded-2xl bg-[#00D6FF] text-slate-900 text-sm font-semibold hover:brightness-95">
-          + Produto
-        </button>
-
-        <div className="text-sm text-slate-700 pl-1">Conta</div>
+    <header className="h-16 bg-white border-b border-black/5 flex items-center justify-end px-6">
+      <div className="text-sm text-slate-700">
+        Conta
       </div>
     </header>
   )
 }
+
 
 function NavItem({
   href,
