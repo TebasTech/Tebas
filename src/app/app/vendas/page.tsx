@@ -51,9 +51,9 @@ type SaleRow = {
 
 type CartLine = {
   product: Product
-  qtyStr: string // BR decimal (virgula)
-  discountPctStr: string // BR decimal
-  lineTotalStr: string // BR money
+  qtyStr: string
+  discountPctStr: string
+  lineTotalStr: string
 }
 
 const PAGAMENTOS = ["Dinheiro", "Cartão", "Pix"] as const
@@ -78,18 +78,15 @@ export default function VendasPage() {
   const [q, setQ] = useState("")
   const [codeInput, setCodeInput] = useState("")
   const [payment, setPayment] = useState<(typeof PAGAMENTOS)[number]>("Dinheiro")
-  const [customerId, setCustomerId] = useState<string>("") // opcional
+  const [customerId, setCustomerId] = useState<string>("")
 
   const [cart, setCart] = useState<CartLine[]>([])
   const [lastSale, setLastSale] = useState<{ sale_number: number; total: number } | null>(null)
 
-  // desconto geral
+  // desconto geral (cruzado com valor recebido)
   const [overallDiscountPctStr, setOverallDiscountPctStr] = useState("0")
-  const [overallFinalStr, setOverallFinalStr] = useState("0,00")
-  const overallTouchedRef = useRef<"pct" | "final" | null>(null)
-
-  // valor recebido (opcional)
-  const [receivedStr, setReceivedStr] = useState("")
+  const [receivedStr, setReceivedStr] = useState("0,00")
+  const overallTouchedRef = useRef<"pct" | "received" | null>(null)
 
   async function getStoreIdOrRedirect(): Promise<{ storeId: string; userId: string } | null> {
     setErrorMsg(null)
@@ -114,9 +111,7 @@ export default function VendasPage() {
     }
 
     if (!data?.store_id) {
-      setErrorMsg(
-        "Seu usuário não está vinculado a nenhuma loja (store_id). Verifique a tabela users_profile no Supabase."
-      )
+      setErrorMsg("Seu usuário não está vinculado a nenhuma loja (store_id).")
       return null
     }
 
@@ -151,7 +146,8 @@ export default function VendasPage() {
       .select("id, store_id, sale_number, created_at, total, payment_method, received_total, customer_id")
       .eq("store_id", currentStoreId)
       .order("created_at", { ascending: false })
-      .limit(120)
+      .order("sale_number", { ascending: false })
+      .limit(200)
 
     if (pRes.error) {
       setProducts([])
@@ -178,17 +174,11 @@ export default function VendasPage() {
 
     const salesData = (sRes.error ? [] : (sRes.data as any[])) ?? []
 
-    // busca contagem de itens por venda (simples e confiável)
     const saleIds = salesData.map((s) => s.id)
-    let itemsCountBySale = new Map<string, number>()
-    if (saleIds.length > 0) {
-      const itRes = await supabase
-        .from("sale_items")
-        .select("sale_id", { count: "exact", head: false })
-        .in("sale_id", saleIds)
+    const itemsCountBySale = new Map<string, number>()
 
-      // A API do Supabase não retorna group by count fácil via client,
-      // então fazemos uma consulta leve e contamos no front.
+    if (saleIds.length > 0) {
+      const itRes = await supabase.from("sale_items").select("sale_id").in("sale_id", saleIds)
       if (!itRes.error && Array.isArray(itRes.data)) {
         for (const r of itRes.data as any[]) {
           const sid = r.sale_id as string
@@ -276,9 +266,10 @@ export default function VendasPage() {
     return round2(total)
   }, [cartSubtotal, overallPct])
 
+  // quando desconto muda, recalcula "Valor recebido" (a não ser que o usuário esteja mexendo no recebido)
   useEffect(() => {
-    if (overallTouchedRef.current === "final") return
-    setOverallFinalStr(formatMoney(cartTotalFinal))
+    if (overallTouchedRef.current === "received") return
+    setReceivedStr(formatMoney(cartTotalFinal))
   }, [cartTotalFinal])
 
   function addToCart(product: Product, qty: number) {
@@ -362,9 +353,8 @@ export default function VendasPage() {
   function clearCart() {
     setCart([])
     setLastSale(null)
-    setReceivedStr("")
     setOverallDiscountPctStr("0")
-    setOverallFinalStr("0,00")
+    setReceivedStr("0,00")
     overallTouchedRef.current = null
   }
 
@@ -377,6 +367,19 @@ export default function VendasPage() {
     if (!Number.isFinite(n)) return null
     return Math.trunc(n)
   }
+
+  // sugestão por ID (mesmo antes do asterisco)
+  const codeSuggestion = useMemo(() => {
+    const t = codeInput.trim()
+    if (!t) return null
+    const digits = t.replace(/\D/g, "")
+    if (!digits) return null
+    const n = Number(digits)
+    if (!Number.isFinite(n)) return null
+    const p = products.find((x) => x.codigo === Math.trunc(n))
+    if (!p) return null
+    return p
+  }, [codeInput, products])
 
   function tryAddByCode() {
     setErrorMsg(null)
@@ -395,8 +398,20 @@ export default function VendasPage() {
 
     addToCart(p, 1)
 
+    // ✅ limpa automaticamente
     setCodeInput("")
     setTimeout(() => codeRef.current?.focus(), 0)
+  }
+
+  function pickSuggestion(p: Product) {
+    setErrorMsg(null)
+    setCodeInput(formatCodigo(p.codigo))
+    // adiciona direto (mais rápido)
+    setTimeout(() => {
+      addToCart(p, 1)
+      setCodeInput("")
+      codeRef.current?.focus()
+    }, 0)
   }
 
   function onChangeOverallPct(v: string) {
@@ -404,16 +419,17 @@ export default function VendasPage() {
     setOverallDiscountPctStr(v)
   }
 
-  function onChangeOverallFinal(v: string) {
-    overallTouchedRef.current = "final"
-    setOverallFinalStr(v)
+  // recebido editável: recalcula desconto geral
+  function onChangeReceived(v: string) {
+    overallTouchedRef.current = "received"
+    setReceivedStr(v)
 
-    const final = toMoneyNumber(v)
+    const received = toMoneyNumber(v)
     if (cartSubtotal <= 0) {
       setOverallDiscountPctStr("0")
       return
     }
-    const pct = clampPct(100 * (1 - final / cartSubtotal))
+    const pct = clampPct(100 * (1 - received / cartSubtotal))
     setOverallDiscountPctStr(formatPctBR(pct))
   }
 
@@ -423,9 +439,9 @@ export default function VendasPage() {
     setOverallDiscountPctStr(formatPctBR(pct))
   }
 
-  function onOverallFinalBlur() {
+  function onReceivedBlur() {
     overallTouchedRef.current = null
-    setOverallFinalStr(formatMoney(toMoneyNumber(overallFinalStr)))
+    setReceivedStr(formatMoney(toMoneyNumber(receivedStr)))
   }
 
   async function finalizeSale() {
@@ -440,7 +456,6 @@ export default function VendasPage() {
       return
     }
 
-    // valida quantidades rápidas (evita erro de RPC desnecessário)
     for (const l of cart) {
       const qty = Math.max(0.001, toNumberBR(l.qtyStr))
       const inv = inventoryByProductId.get(l.product.id)
@@ -460,7 +475,8 @@ export default function VendasPage() {
       line_total: round2(toMoneyNumber(l.lineTotalStr)),
     }))
 
-    const received = receivedStr.trim() ? round2(toMoneyNumber(receivedStr)) : null
+    // ✅ recebido = total final (editável)
+    const received = round2(toMoneyNumber(receivedStr))
 
     const { data, error } = await supabase.rpc("create_sale", {
       p_store_id: storeId,
@@ -485,37 +501,66 @@ export default function VendasPage() {
 
     setLastSale({
       sale_number: Number.isFinite(saleNumber) ? saleNumber : 0,
-      total: Number.isFinite(saleTotal) ? saleTotal : cartTotalFinal,
+      total: Number.isFinite(saleTotal) ? saleTotal : received,
     })
 
     await loadAll(storeId)
 
-    // limpa tudo para a próxima venda
     setCart([])
     setSaving(false)
     setCodeInput("")
     setQ("")
     setCustomerId("")
-    setReceivedStr("")
     setOverallDiscountPctStr("0")
-    setOverallFinalStr("0,00")
+    setReceivedStr("0,00")
     overallTouchedRef.current = null
     setTimeout(() => codeRef.current?.focus(), 80)
+  }
+
+  async function deleteSale(saleId: string) {
+    if (!storeId) return
+    const ok = confirm("Remover esta venda e devolver ao estoque?")
+    if (!ok) return
+
+    setErrorMsg(null)
+
+    const { error } = await supabase.rpc("revert_sale", {
+      p_store_id: storeId,
+      p_sale_id: saleId,
+    })
+
+    if (error) {
+      setErrorMsg(`Erro ao estornar: ${error.message}`)
+      return
+    }
+
+    await loadAll(storeId)
+  }
+
+  async function updateSaleInline(
+    saleId: string,
+    patch: Partial<{ customer_id: string | null; payment_method: string; received_total: number | null }>
+  ) {
+    if (!storeId) return
+    setErrorMsg(null)
+
+    const { error } = await supabase.from("sales").update(patch).eq("id", saleId).eq("store_id", storeId)
+    if (error) {
+      setErrorMsg(`Erro ao atualizar: ${error.message}`)
+      await loadAll(storeId)
+    } else {
+      await loadAll(storeId)
+    }
   }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="mt-1 h-11 w-11 rounded-2xl bg-[#EAF7FF] border border-black/5 flex items-center justify-center">
-            <IconCart />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Vendas</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Cliente opcional. Para adicionar por ID use sempre: <b>1*</b>.
-            </p>
-          </div>
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Vendas</h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Cliente opcional. Para adicionar por ID use: <b>1*</b>.
+          </p>
         </div>
 
         <Link
@@ -534,12 +579,11 @@ export default function VendasPage() {
 
       {lastSale ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          Venda <b>#{lastSale.sale_number}</b> finalizada. Total: <b>R$ {formatMoney(lastSale.total)}</b>
+          Venda <b>#{lastSale.sale_number}</b> finalizada. Recebido: <b>R$ {formatMoney(lastSale.total)}</b>
         </div>
       ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* PRODUTOS */}
         <section className="lg:col-span-3 rounded-2xl border border-black/5 bg-white shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-black/5 space-y-4">
             <div>
@@ -558,27 +602,47 @@ export default function VendasPage() {
                 />
               </label>
 
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-800">Adicionar por ID</span>
-                <div className="mt-2 flex gap-2">
-                  <input
-                    ref={codeRef}
-                    value={codeInput}
-                    onChange={(e) => setCodeInput(e.target.value)}
-                    onKeyDown={(e) => (e.key === "Enter" ? tryAddByCode() : null)}
-                    placeholder="Ex: 12*"
-                    className="w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
-                    inputMode="text"
-                  />
-                  <button
-                    onClick={tryAddByCode}
-                    className="h-11 px-4 rounded-2xl bg-[#22C55E] text-white text-sm font-semibold hover:brightness-95"
-                  >
-                    Add
-                  </button>
-                </div>
-                <div className="text-xs text-slate-500 mt-1">O asterisco evita confusão (1 vs 10).</div>
-              </label>
+              <div className="relative">
+                <label className="block">
+                  <span className="text-sm font-semibold text-slate-800">Adicionar por ID</span>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      ref={codeRef}
+                      value={codeInput}
+                      onChange={(e) => setCodeInput(e.target.value)}
+                      onKeyDown={(e) => (e.key === "Enter" ? tryAddByCode() : null)}
+                      placeholder="Ex: 12*"
+                      className="w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
+                      inputMode="text"
+                    />
+                    <button
+                      onClick={tryAddByCode}
+                      className="h-11 px-4 rounded-2xl bg-[#22C55E] text-white text-sm font-semibold hover:brightness-95"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </label>
+
+                {codeSuggestion ? (
+                  <div className="absolute left-0 right-0 mt-2 rounded-2xl bg-white border border-black/10 shadow-lg overflow-hidden z-20">
+                    <button
+                      type="button"
+                      onClick={() => pickSuggestion(codeSuggestion)}
+                      className="w-full text-left px-4 py-3 hover:bg-slate-50"
+                    >
+                      <div className="text-sm font-semibold text-slate-900">
+                        {formatCodigo(codeSuggestion.codigo)} {codeSuggestion.descricao}
+                      </div>
+                      <div className="text-xs text-slate-600 mt-0.5">
+                        {codeSuggestion.marca || "Outros"} • R$ {formatMoney(codeSuggestion.preco)}
+                      </div>
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="text-xs text-slate-500 mt-1">Use o asterisco para evitar confusão (1 vs 10).</div>
+              </div>
             </div>
 
             <label className="block">
@@ -655,7 +719,6 @@ export default function VendasPage() {
           )}
         </section>
 
-        {/* CARRINHO */}
         <section className="lg:col-span-2 rounded-2xl border border-black/5 bg-white shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between">
             <div>
@@ -693,7 +756,8 @@ export default function VendasPage() {
                         <div>
                           <div className="font-semibold text-slate-900">{l.product.descricao}</div>
                           <div className="text-xs text-slate-600 mt-1">
-                            ID {formatCodigo(l.product.codigo)} • R$ {formatMoney(l.product.preco)} • Base: R$ {formatMoney(base)} • Estoque: {formatQtyBR(qtdStock)} {uni}
+                            ID {formatCodigo(l.product.codigo)} • R$ {formatMoney(l.product.preco)} • Base: R${" "}
+                            {formatMoney(base)} • Estoque: {formatQtyBR(qtdStock)} {uni}
                           </div>
                           {low ? (
                             <div className="text-xs text-red-600 mt-2">
@@ -775,11 +839,11 @@ export default function VendasPage() {
                 </label>
 
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-800">Total final</span>
+                  <span className="text-xs font-semibold text-slate-800">Valor recebido</span>
                   <input
-                    value={overallFinalStr}
-                    onChange={(e) => onChangeOverallFinal(e.target.value)}
-                    onBlur={onOverallFinalBlur}
+                    value={receivedStr}
+                    onChange={(e) => onChangeReceived(e.target.value)}
+                    onBlur={onReceivedBlur}
                     className="mt-2 w-full text-right h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                     inputMode="decimal"
                     placeholder="Ex: 120,00"
@@ -787,20 +851,9 @@ export default function VendasPage() {
                 </label>
               </div>
 
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-800">Valor recebido (opcional)</span>
-                <input
-                  value={receivedStr}
-                  onChange={(e) => setReceivedStr(e.target.value)}
-                  className="mt-2 w-full text-right h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
-                  inputMode="decimal"
-                  placeholder="Ex: 150,00"
-                />
-              </label>
-
               <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-900">Total</div>
-                <div className="text-2xl font-semibold text-slate-900">R$ {formatMoney(cartTotalFinal)}</div>
+                <div className="text-sm font-semibold text-slate-900">Recebido</div>
+                <div className="text-2xl font-semibold text-slate-900">R$ {formatMoney(toMoneyNumber(receivedStr))}</div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -834,27 +887,19 @@ export default function VendasPage() {
         </section>
       </div>
 
-      {/* HISTÓRICO */}
       <section className="rounded-2xl border border-black/5 bg-white shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold text-slate-900">Histórico de vendas</div>
-            <div className="text-xs text-slate-600 mt-1">Últimas vendas registradas</div>
+            <div className="text-xs text-slate-600 mt-1">Remova ou ajuste dados básicos (cliente, pagamento, recebido).</div>
           </div>
-
-          <button
-            onClick={() => (storeId ? loadAll(storeId) : null)}
-            className="h-10 px-4 rounded-2xl bg-white border border-black/10 text-slate-900 text-sm font-semibold hover:bg-slate-50"
-          >
-            Atualizar
-          </button>
         </div>
 
         {loading ? (
           <div className="px-5 py-6 text-sm text-slate-600">Carregando…</div>
         ) : (
           <div className="overflow-auto">
-            <table className="w-full text-sm min-w-[980px]">
+            <table className="w-full text-sm min-w-[1180px]">
               <thead className="bg-slate-50 text-slate-700">
                 <tr>
                   <th className="text-left font-semibold px-4 py-3">Data</th>
@@ -864,13 +909,14 @@ export default function VendasPage() {
                   <th className="text-left font-semibold px-4 py-3">Pagamento</th>
                   <th className="text-right font-semibold px-4 py-3">Total</th>
                   <th className="text-right font-semibold px-4 py-3">Recebido</th>
+                  <th className="text-left font-semibold px-4 py-3">Ações</th>
                 </tr>
               </thead>
 
               <tbody className="bg-white">
                 {history.length === 0 ? (
                   <tr className="border-t border-black/5">
-                    <td className="px-4 py-5 text-slate-600" colSpan={7}>
+                    <td className="px-4 py-5 text-slate-600" colSpan={8}>
                       Nenhuma venda registrada ainda.
                     </td>
                   </tr>
@@ -879,18 +925,75 @@ export default function VendasPage() {
                     <tr key={s.id} className="border-t border-black/5 hover:bg-slate-50/60">
                       <td className="px-4 py-3 text-slate-800">{formatDateTimeBR(s.created_at)}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">#{s.sale_number}</td>
-                      <td className="px-4 py-3 text-slate-800">{s.customer_name}</td>
+
+                      <td className="px-4 py-3">
+                        <select
+                          value={s.customer_id ?? ""}
+                          onChange={(e) =>
+                            updateSaleInline(s.id, { customer_id: e.target.value ? e.target.value : null })
+                          }
+                          className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
+                        >
+                          <option value="">Indefinido</option>
+                          {customers.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
                       <td className="px-4 py-3 text-right font-semibold text-slate-900">{s.items_count}</td>
-                      <td className="px-4 py-3 text-slate-800">{s.payment_method || "—"}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-900">R$ {formatMoney(s.total)}</td>
+
+                      <td className="px-4 py-3">
+                        <select
+                          value={s.payment_method ?? "Dinheiro"}
+                          onChange={(e) => updateSaleInline(s.id, { payment_method: e.target.value })}
+                          className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
+                        >
+                          {PAGAMENTOS.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
                       <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                        {s.received_total === null ? "—" : `R$ ${formatMoney(s.received_total)}`}
+                        R$ {formatMoney(s.total)}
+                      </td>
+
+                      <td className="px-4 py-3 text-right">
+                        <input
+                          defaultValue={s.received_total === null ? "" : formatMoney(s.received_total)}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim()
+                            const n = v ? round2(toMoneyNumber(v)) : null
+                            updateSaleInline(s.id, { received_total: n })
+                          }}
+                          className="w-[130px] text-right h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
+                          inputMode="decimal"
+                          placeholder="—"
+                        />
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => deleteSale(s.id)}
+                          className="h-10 px-4 rounded-2xl bg-white border border-red-200 text-red-700 text-xs font-semibold hover:bg-red-50"
+                        >
+                          Remover
+                        </button>
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
+
+            <div className="px-5 py-4 text-xs text-slate-500 border-t border-black/5">
+              Observação: ao remover, o sistema faz estorno (devolve as quantidades ao estoque).
+            </div>
           </div>
         )}
       </section>
@@ -916,8 +1019,7 @@ function round3(n: number) {
 function toNumberBR(v: string) {
   const t = String(v ?? "").trim()
   if (!t) return 0
-  // aceita: "1,5" ou "1.5" ou "1"
-  const norm = t.replace(/\./g, "").replace(",", ".") // remove milhar simples, usa vírgula como decimal
+  const norm = t.replace(/\./g, "").replace(",", ".")
   const n = Number(norm)
   if (!Number.isFinite(n)) return 0
   return n
@@ -943,7 +1045,6 @@ function formatMoney(n: number) {
 function formatPctBR(n: number) {
   if (!Number.isFinite(n)) return "0"
   const v = round2(n)
-  // tira ",00" se for inteiro
   if (Math.abs(v - Math.round(v)) < 1e-9) return String(Math.round(v))
   return String(v).replace(".", ",")
 }
@@ -952,7 +1053,6 @@ function formatQtyBR(n: number) {
   if (!Number.isFinite(n)) return "0"
   const isInt = Math.abs(n - Math.round(n)) < 1e-9
   if (isInt) return String(Math.round(n))
-  // até 3 casas, sem zeros finais
   return n.toFixed(3).replace(".", ",").replace(/0+$/, "").replace(/,$/, "")
 }
 
@@ -965,14 +1065,4 @@ function formatDateTimeBR(iso: string) {
   const hh = String(d.getHours()).padStart(2, "0")
   const mi = String(d.getMinutes()).padStart(2, "0")
   return `${dd}/${mm}/${yy} ${hh}:${mi}`
-}
-
-function IconCart() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-900" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M6 6h15l-2 9H7L6 6Z" />
-      <path d="M6 6 5 3H2" />
-      <path d="M7 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm12 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
-    </svg>
-  )
 }

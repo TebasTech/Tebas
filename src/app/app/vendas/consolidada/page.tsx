@@ -30,21 +30,22 @@ type Customer = {
 
 type Row = {
   id: string
-  dateStr: string // "dd/mm/aaaa"
-  customerId: string // "" = indefinido
-  customerText: string // para busca rápida (aceita "i" -> Indefinido)
-  codeStr: string // "1*"
+  dateISO: string
+  customerId: string
+  codeStr: string
+  descStr: string
   productId: string
-  qtyStr: string // decimal BR
+  qtyStr: string
   unitPrice: number
   total: number
-  receivedStr: string // BR money
+  receivedStr: string
+  receivedTouched: boolean
   error: string
 }
 
 export default function VendasConsolidadaPage() {
   const router = useRouter()
-  const firstCodeRef = useRef<HTMLInputElement | null>(null)
+  const firstDescRef = useRef<HTMLInputElement | null>(null)
 
   const [storeId, setStoreId] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
@@ -123,7 +124,7 @@ export default function VendasConsolidadaPage() {
       setCustomers((cRes.data as Customer[]) ?? [])
 
       setLoading(false)
-      setTimeout(() => firstCodeRef.current?.focus(), 80)
+      setTimeout(() => firstDescRef.current?.focus(), 80)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -148,11 +149,12 @@ export default function VendasConsolidadaPage() {
     return map
   }, [products])
 
-  const customersById = useMemo(() => {
-    const map = new Map<string, Customer>()
-    for (const c of customers) map.set(c.id, c)
-    return map
-  }, [customers])
+  const productOptions = useMemo(() => {
+    return products.map((p) => {
+      const label = `${p.descricao}${p.marca ? " • " + p.marca : ""} (${formatCodigo(p.codigo)})`
+      return { id: p.id, label }
+    })
+  }, [products])
 
   const customerOptions = useMemo(() => {
     return [
@@ -176,24 +178,50 @@ export default function VendasConsolidadaPage() {
     setRows((prev) => [...prev, newRow()])
   }
 
-  function applyProductFromCode(r: Row, codeStr: string) {
+  function applyProductFromCode(row: Row, codeStr: string) {
     const code = parseCodigoStrict(codeStr)
-    if (code === null) return { productId: "", unitPrice: 0, total: 0, error: "Use ID com asterisco. Ex: 1*" }
+    if (code === null)
+      return { productId: "", unitPrice: 0, total: 0, descStr: "", error: "Use ID com asterisco. Ex: 1*" }
 
     const p = productsByCode.get(code)
-    if (!p) return { productId: "", unitPrice: 0, total: 0, error: "ID não encontrado." }
+    if (!p) return { productId: "", unitPrice: 0, total: 0, descStr: "", error: "ID não encontrado." }
 
-    const qty = Math.max(0.001, toNumberBR(r.qtyStr))
+    const qty = Math.max(0.001, toNumberBR(row.qtyStr))
     const total = round2((p.preco || 0) * qty)
+    const descStr = `${p.descricao}${p.marca ? " • " + p.marca : ""} (${formatCodigo(p.codigo)})`
 
-    return { productId: p.id, unitPrice: Number(p.preco || 0), total, error: "" }
+    return { productId: p.id, unitPrice: Number(p.preco || 0), total, descStr, error: "" }
   }
 
-  function recalcRowTotal(r: Row, productId: string, qtyStr: string) {
+  function applyProductFromDesc(row: Row, descStr: string) {
+    const opt = productOptions.find((o) => o.label === descStr)
+    if (!opt) return { productId: "", unitPrice: 0, total: 0, codeStr: "", error: "" }
+
+    const p = productsById.get(opt.id)
+    if (!p) return { productId: "", unitPrice: 0, total: 0, codeStr: "", error: "Item inválido." }
+
+    const qty = Math.max(0.001, toNumberBR(row.qtyStr))
+    const total = round2((p.preco || 0) * qty)
+    const codeStrFinal = formatCodigo(p.codigo)
+
+    return { productId: p.id, unitPrice: Number(p.preco || 0), total, codeStr: codeStrFinal, error: "" }
+  }
+
+  function recalcRowTotal(productId: string, qtyStr: string) {
     const p = productsById.get(productId)
     if (!p) return { unitPrice: 0, total: 0 }
     const qty = Math.max(0.001, toNumberBR(qtyStr))
     return { unitPrice: Number(p.preco || 0), total: round2(Number(p.preco || 0) * qty) }
+  }
+
+  function applyTotalAndMaybeAutofillReceived(rowId: string, newTotal: number) {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== rowId) return r
+        const receivedStr = r.receivedTouched ? r.receivedStr : formatMoney(newTotal)
+        return { ...r, total: newTotal, receivedStr }
+      })
+    )
   }
 
   async function saveAll() {
@@ -207,41 +235,41 @@ export default function VendasConsolidadaPage() {
 
     const cleaned = rows
       .map((r) => ({ ...r, error: "" }))
-      .filter((r) => r.codeStr.trim() || r.productId)
+      .filter((r) => r.codeStr.trim() || r.descStr.trim() || r.productId)
 
     if (cleaned.length === 0) {
       setErrorMsg("Adicione pelo menos 1 linha.")
       return
     }
 
-    // validação local (estoque, data, produto)
     const validated: Row[] = []
     for (const r of cleaned) {
-      const patch: Partial<Row> = {}
-      const dateIso = parseDateBRToISO(r.dateStr)
-      if (!dateIso) patch.error = "Data inválida (use dd/mm/aaaa)."
+      let error = ""
 
-      const productId = r.productId || applyProductFromCode(r, r.codeStr).productId
-      if (!productId) patch.error = patch.error ? patch.error : "Item inválido."
+      if (!r.dateISO || !/^\d{4}-\d{2}-\d{2}$/.test(r.dateISO)) error = "Data inválida."
 
-      const p = productId ? productsById.get(productId) : null
+      let productId = r.productId
+      if (!productId && r.codeStr.trim()) productId = applyProductFromCode(r, r.codeStr).productId
+      if (!productId && r.descStr.trim()) productId = applyProductFromDesc(r, r.descStr).productId
+      if (!productId) error = error || "Selecione um item (ID* ou descrição)."
+
       const qty = Math.max(0.001, toNumberBR(r.qtyStr))
       const inv = productId ? inventoryByProductId.get(productId) : null
       const stock = Number(inv?.quantidade ?? 0)
+      if (productId && qty > stock) error = error || "Estoque insuficiente."
 
-      if (p && qty > stock) patch.error = patch.error ? patch.error : "Estoque insuficiente."
-
-      if (patch.error) {
-        updateRow(r.id, patch)
+      if (error) {
+        updateRow(r.id, { error })
       } else {
-        const { unitPrice, total } = recalcRowTotal(r, productId, r.qtyStr)
+        const rr = recalcRowTotal(productId!, r.qtyStr)
+        const received = r.receivedStr.trim() ? round2(toMoneyNumber(r.receivedStr)) : rr.total
         validated.push({
           ...r,
-          productId,
-          unitPrice,
-          total,
+          productId: productId!,
+          unitPrice: rr.unitPrice,
+          total: rr.total,
+          receivedStr: formatMoney(received),
           error: "",
-          dateStr: r.dateStr.trim(),
         })
       }
     }
@@ -253,19 +281,23 @@ export default function VendasConsolidadaPage() {
 
     setSaving(true)
 
-    // salva uma venda por linha (rápido para lançar caderno/whatsapp)
     let ok = 0
     for (const r of validated) {
-      const dateIso = parseDateBRToISO(r.dateStr)!
-      const createdAt = new Date(dateIso + "T12:00:00").toISOString() // meio-dia para evitar bug de fuso na hora
-
-      const received = r.receivedStr.trim() ? round2(toMoneyNumber(r.receivedStr)) : null
+      const createdAt = new Date(r.dateISO + "T12:00:00").toISOString()
+      const received = round2(toMoneyNumber(r.receivedStr))
 
       const payload = {
         p_store_id: storeId,
         p_user_id: userId,
         p_payment: "Dinheiro",
-        p_items: [{ product_id: r.productId, qty: round3(Math.max(0.001, toNumberBR(r.qtyStr))), discount_pct: 0, line_total: r.total }],
+        p_items: [
+          {
+            product_id: r.productId,
+            qty: round3(Math.max(0.001, toNumberBR(r.qtyStr))),
+            discount_pct: 0,
+            line_total: r.total,
+          },
+        ],
         p_customer_id: r.customerId ? r.customerId : null,
         p_discount_pct: 0,
         p_received_total: received,
@@ -285,7 +317,7 @@ export default function VendasConsolidadaPage() {
     setSaving(false)
     setOkMsg(`${ok} venda(s) registrada(s).`)
     setRows([newRow()])
-    setTimeout(() => firstCodeRef.current?.focus(), 80)
+    setTimeout(() => firstDescRef.current?.focus(), 80)
   }
 
   return (
@@ -294,7 +326,7 @@ export default function VendasConsolidadaPage() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Vendas Consolidada</h1>
           <p className="text-sm text-slate-600 mt-1">
-            Para lançar vendas rápidas depois (caderno/WhatsApp). Cada linha vira uma venda no histórico e baixa o estoque.
+            Para lançar vendas anotadas. Use <b>ID*</b> ou digite a descrição e selecione na lista.
           </p>
         </div>
 
@@ -324,7 +356,7 @@ export default function VendasConsolidadaPage() {
 
       {okMsg ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          {okMsg}
+          {okMsg} (Veja no histórico da página Vendas.)
         </div>
       ) : null}
 
@@ -344,13 +376,19 @@ export default function VendasConsolidadaPage() {
           <div className="px-5 py-6 text-sm text-slate-600">Carregando…</div>
         ) : (
           <div className="overflow-auto">
-            <table className="w-full text-sm min-w-[1200px]">
+            <datalist id="products-datalist">
+              {productOptions.map((o) => (
+                <option key={o.id} value={o.label} />
+              ))}
+            </datalist>
+
+            <table className="w-full text-sm min-w-[1400px]">
               <thead className="bg-slate-50 text-slate-700">
                 <tr>
                   <th className="text-left font-semibold px-4 py-3">Data</th>
                   <th className="text-left font-semibold px-4 py-3">Cliente</th>
+                  <th className="text-left font-semibold px-4 py-3">Descrição</th>
                   <th className="text-left font-semibold px-4 py-3">ID</th>
-                  <th className="text-left font-semibold px-4 py-3">Item</th>
                   <th className="text-right font-semibold px-4 py-3">Valor un.</th>
                   <th className="text-right font-semibold px-4 py-3">Qtde</th>
                   <th className="text-right font-semibold px-4 py-3">Valor total</th>
@@ -361,22 +399,19 @@ export default function VendasConsolidadaPage() {
 
               <tbody className="bg-white">
                 {rows.map((r, idx) => {
-                  const p = r.productId ? productsById.get(r.productId) : null
-                  const displayItem = p ? `${p.descricao}${p.marca ? " • " + p.marca : ""}` : "—"
-                  const inv = r.productId ? inventoryByProductId.get(r.productId) : null
-                  const uni = (inv?.unidade || "un").trim() || "un"
-
                   const hasErr = Boolean(r.error)
 
                   return (
-                    <tr key={r.id} className={`border-t border-black/5 ${hasErr ? "bg-red-50/40" : "hover:bg-slate-50/60"}`}>
+                    <tr
+                      key={r.id}
+                      className={`border-t border-black/5 ${hasErr ? "bg-red-50/40" : "hover:bg-slate-50/60"}`}
+                    >
                       <td className="px-4 py-3">
                         <input
-                          value={r.dateStr}
-                          onChange={(e) => updateRow(r.id, { dateStr: e.target.value, error: "" })}
-                          className="w-[130px] h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
-                          placeholder="02/02/2026"
-                          inputMode="numeric"
+                          type="date"
+                          value={r.dateISO}
+                          onChange={(e) => updateRow(r.id, { dateISO: e.target.value, error: "" })}
+                          className="w-[150px] h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                         />
                       </td>
 
@@ -396,29 +431,60 @@ export default function VendasConsolidadaPage() {
 
                       <td className="px-4 py-3">
                         <input
-                          ref={idx === 0 ? firstCodeRef : undefined}
+                          ref={idx === 0 ? firstDescRef : undefined}
+                          list="products-datalist"
+                          value={r.descStr}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            const patch = applyProductFromDesc(r, v)
+
+                            // total calculado
+                            const newTotal = patch.total
+                            const receivedStr = r.receivedTouched ? r.receivedStr : formatMoney(newTotal)
+
+                            updateRow(r.id, {
+                              descStr: v,
+                              productId: patch.productId,
+                              unitPrice: patch.unitPrice,
+                              total: newTotal,
+                              receivedStr,
+                              codeStr: patch.codeStr || r.codeStr,
+                              error: patch.error || "",
+                            })
+                          }}
+                          className="w-[420px] h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
+                          placeholder="Digite a descrição e selecione..."
+                        />
+                        {r.error ? (
+                          <div className="text-xs text-red-700 mt-1">{r.error}</div>
+                        ) : (
+                          <div className="text-xs text-slate-500 mt-1">Use vírgula no decimal. Ex: 1,5</div>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <input
                           value={r.codeStr}
                           onChange={(e) => {
                             const v = e.target.value
                             const patch = applyProductFromCode(r, v)
+                            const newTotal = patch.total
+                            const receivedStr = r.receivedTouched ? r.receivedStr : formatMoney(newTotal)
+
                             updateRow(r.id, {
                               codeStr: v,
                               productId: patch.productId,
                               unitPrice: patch.unitPrice,
-                              total: patch.total,
-                              error: patch.error,
+                              total: newTotal,
+                              receivedStr,
+                              descStr: patch.descStr || r.descStr,
+                              error: patch.error || "",
                             })
                           }}
                           className="w-[92px] h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                           placeholder="1*"
                           inputMode="text"
                         />
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-800">
-                        <div className="font-semibold">{displayItem}</div>
-                        <div className="text-xs text-slate-500 mt-0.5">{uni}</div>
-                        {r.error ? <div className="text-xs text-red-700 mt-1">{r.error}</div> : null}
                       </td>
 
                       <td className="px-4 py-3 text-right font-semibold text-slate-900">
@@ -430,12 +496,15 @@ export default function VendasConsolidadaPage() {
                           value={r.qtyStr}
                           onChange={(e) => {
                             const v = e.target.value
-                            const qty = Math.max(0.001, toNumberBR(v))
-                            const rr = r.productId ? recalcRowTotal(r, r.productId, v) : { unitPrice: 0, total: 0 }
+                            const rr = r.productId ? recalcRowTotal(r.productId, v) : { unitPrice: 0, total: 0 }
+
+                            const receivedStr = r.receivedTouched ? r.receivedStr : formatMoney(rr.total)
+
                             updateRow(r.id, {
                               qtyStr: v,
                               unitPrice: rr.unitPrice,
                               total: rr.total,
+                              receivedStr,
                               error: "",
                             })
                           }}
@@ -445,14 +514,18 @@ export default function VendasConsolidadaPage() {
                         />
                       </td>
 
+                      {/* ✅ Valor total: somente leitura */}
                       <td className="px-4 py-3 text-right font-semibold text-slate-900">
                         R$ {formatMoney(r.total)}
                       </td>
 
+                      {/* ✅ Valor recebido: pré-preenchido com o total, mas editável */}
                       <td className="px-4 py-3 text-right">
                         <input
                           value={r.receivedStr}
-                          onChange={(e) => updateRow(r.id, { receivedStr: e.target.value, error: "" })}
+                          onChange={(e) =>
+                            updateRow(r.id, { receivedStr: e.target.value, receivedTouched: true, error: "" })
+                          }
                           className="w-[120px] text-right h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
                           placeholder="0,00"
                           inputMode="decimal"
@@ -473,6 +546,10 @@ export default function VendasConsolidadaPage() {
                 })}
               </tbody>
             </table>
+
+            <div className="px-5 py-4 text-xs text-slate-500 border-t border-black/5">
+              Dica: escolha pela <b>Descrição</b> (lista) ou pelo <b>ID*</b>. Um preenche o outro automaticamente.
+            </div>
           </div>
         )}
       </section>
@@ -482,20 +559,21 @@ export default function VendasConsolidadaPage() {
 
 function newRow(): Row {
   const today = new Date()
-  const dd = String(today.getDate()).padStart(2, "0")
+  const yyyy = String(today.getFullYear())
   const mm = String(today.getMonth() + 1).padStart(2, "0")
-  const yy = today.getFullYear()
+  const dd = String(today.getDate()).padStart(2, "0")
   return {
     id: crypto.randomUUID(),
-    dateStr: `${dd}/${mm}/${yy}`,
+    dateISO: `${yyyy}-${mm}-${dd}`,
     customerId: "",
-    customerText: "",
     codeStr: "",
+    descStr: "",
     productId: "",
     qtyStr: "1",
     unitPrice: 0,
     total: 0,
     receivedStr: "",
+    receivedTouched: false,
     error: "",
   }
 }
@@ -508,6 +586,11 @@ function parseCodigoStrict(raw: string): number | null {
   const n = Number(numPart)
   if (!Number.isFinite(n)) return null
   return Math.trunc(n)
+}
+
+function formatCodigo(codigo: number | null) {
+  if (codigo === null || codigo === undefined) return ""
+  return `${codigo}*`
 }
 
 function round2(n: number) {
@@ -536,17 +619,4 @@ function toMoneyNumber(v: string) {
 function formatMoney(n: number) {
   if (!Number.isFinite(n)) return "0,00"
   return n.toFixed(2).replace(".", ",")
-}
-
-function parseDateBRToISO(v: string) {
-  const t = (v || "").trim()
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t)
-  if (!m) return null
-  const dd = Number(m[1])
-  const mm = Number(m[2])
-  const yy = Number(m[3])
-  if (!Number.isFinite(dd) || !Number.isFinite(mm) || !Number.isFinite(yy)) return null
-  if (mm < 1 || mm > 12) return null
-  if (dd < 1 || dd > 31) return null
-  return `${String(yy).padStart(4, "0")}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`
 }
