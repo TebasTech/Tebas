@@ -90,7 +90,7 @@ export default function HomePage() {
               </h1>
 
               <p className="mt-3 text-slate-700 text-base leading-relaxed">
-                O Tebas Tech foi feito para <b>empreendedor</b>: rápido, sem complicação,
+                O Tebas Tech foi feito para o <b>empreendedor</b>: rápido, sem complicação,
                 com registro de vendas e despesas, e números que fazem sentido no fim do dia.
               </p>
 
