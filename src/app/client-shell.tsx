@@ -1,6 +1,9 @@
+// src/app/client-shell.tsx
 "use client"
 
-import { ReactNode, useEffect } from "react"
+// ✅ Atualização: carrega role do usuário e mostra link Admin só para role='admin'
+
+import { ReactNode, useEffect, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -9,26 +12,80 @@ import { supabase } from "@/lib/supabase/client"
 import { I18nProvider, useI18n } from "@/lib/i18n/provider"
 import LanguageSwitcher from "@/components/language-switcher"
 
+type Profile = { store_id: string | null; role: string | null }
+
 export default function ClientShell({ children }: { children: ReactNode }) {
   const router = useRouter()
 
-  // ✅ AUTH GUARD (bloqueia /app/* sem login)
+  const [checked, setChecked] = useState(false)
+  const [allowed, setAllowed] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+
   useEffect(() => {
+    let mounted = true
+
+    async function readRole() {
+      const { data: auth } = await supabase.auth.getUser()
+      const user = auth.user
+      if (!user) return
+
+      const { data: prof } = await supabase
+        .from("users_profile")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+
+      if (!mounted) return
+      const role = String((prof as any)?.role || "").toLowerCase()
+      setIsAdmin(role === "admin")
+    }
+
     async function check() {
       const { data } = await supabase.auth.getSession()
+      const ok = !!data.session
 
-      if (!data.session) {
+      if (!mounted) return
+
+      setAllowed(ok)
+      setChecked(true)
+
+      if (!ok) {
         router.replace("/login")
+        return
       }
+
+      await readRole()
     }
 
     check()
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const ok = !!session
+      if (!mounted) return
+      setAllowed(ok)
+      setChecked(true)
+
+      if (!ok) {
+        router.replace("/login")
+        return
+      }
+
+      await readRole()
+    })
+
+    return () => {
+      mounted = false
+      sub.subscription.unsubscribe()
+    }
   }, [router])
+
+  if (!checked) return null
+  if (!allowed) return null
 
   return (
     <I18nProvider>
       <div className="flex h-screen">
-        <Sidebar />
+        <Sidebar isAdmin={isAdmin} />
 
         <div className="flex-1 flex flex-col">
           <Topbar />
@@ -44,9 +101,7 @@ export default function ClientShell({ children }: { children: ReactNode }) {
   )
 }
 
-/* ================= Sidebar ================= */
-
-function Sidebar() {
+function Sidebar({ isAdmin }: { isAdmin: boolean }) {
   const { t } = useI18n()
 
   return (
@@ -73,6 +128,15 @@ function Sidebar() {
           <NavItem href="/app/marketing" label={t("nav.marketing")} />
           <NavItem href="/app/estatisticas" label={t("nav.stats")} />
 
+          {isAdmin ? (
+            <div className="mt-2">
+              <div className="px-4 pt-3 pb-1 text-[11px] font-semibold text-slate-600">
+                Admin
+              </div>
+              <NavItem href="/app/admin" label="Admin Tebas" />
+            </div>
+          ) : null}
+
           <div className="mt-auto">
             <NavItem href="/app/ajuda" label={t("nav.help")} />
           </div>
@@ -82,20 +146,59 @@ function Sidebar() {
   )
 }
 
-/* ================= Topbar ================= */
-
 function Topbar() {
-  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const router = useRouter()
+
+  async function onLogout() {
+    await supabase.auth.signOut()
+    router.replace("/login")
+  }
 
   return (
     <header className="h-16 bg-white border-b border-black/5 flex items-center justify-end px-6 gap-3">
-      <LanguageSwitcher />
-      <div className="text-sm text-slate-700">{t("app.account")}</div>
+      <div className="relative">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="h-11 px-5 rounded-2xl bg-white border border-black/10 text-slate-900 text-sm font-semibold hover:bg-slate-50"
+        >
+          Conta
+        </button>
+
+        {open ? (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setOpen(false)}
+            />
+            <div className="absolute right-0 mt-2 z-50 w-44 rounded-2xl bg-white border border-black/10 shadow-lg overflow-hidden">
+              <button
+                onClick={() => {
+                  setOpen(false)
+                  router.push("/app/loja")
+                }}
+                className="w-full text-left px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+              >
+                Loja
+              </button>
+
+              <button
+                onClick={() => {
+                  setOpen(false)
+                  onLogout()
+                }}
+                className="w-full text-left px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50"
+              >
+                Sair
+              </button>
+            </div>
+          </>
+        ) : null}
+      </div>
     </header>
   )
 }
 
-/* ================= Nav Item ================= */
 
 function NavItem({ href, label }: { href: string; label: string }) {
   return (
