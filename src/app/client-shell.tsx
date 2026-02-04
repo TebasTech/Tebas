@@ -1,13 +1,30 @@
 "use client"
 
-import { ReactNode } from "react"
+import { ReactNode, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
+import { useRouter } from "next/navigation"
 
+import { supabase } from "@/lib/supabase/client"
 import { I18nProvider, useI18n } from "@/lib/i18n/provider"
 import LanguageSwitcher from "@/components/language-switcher"
 
 export default function ClientShell({ children }: { children: ReactNode }) {
+  const router = useRouter()
+
+  // ✅ AUTH GUARD (bloqueia /app/* sem login)
+  useEffect(() => {
+    async function check() {
+      const { data } = await supabase.auth.getSession()
+
+      if (!data.session) {
+        router.replace("/login")
+      }
+    }
+
+    check()
+  }, [router])
+
   return (
     <I18nProvider>
       <div className="flex h-screen">
@@ -26,6 +43,8 @@ export default function ClientShell({ children }: { children: ReactNode }) {
     </I18nProvider>
   )
 }
+
+/* ================= Sidebar ================= */
 
 function Sidebar() {
   const { t } = useI18n()
@@ -63,16 +82,20 @@ function Sidebar() {
   )
 }
 
+/* ================= Topbar ================= */
+
 function Topbar() {
   const { t } = useI18n()
 
   return (
     <header className="h-16 bg-white border-b border-black/5 flex items-center justify-end px-6 gap-3">
       <LanguageSwitcher />
-      <div className="text-sm text-slate-700 pl-1">{t("app.account")}</div>
+      <div className="text-sm text-slate-700">{t("app.account")}</div>
     </header>
   )
 }
+
+/* ================= Nav Item ================= */
 
 function NavItem({ href, label }: { href: string; label: string }) {
   return (
