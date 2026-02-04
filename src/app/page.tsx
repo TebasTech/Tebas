@@ -118,8 +118,8 @@ export default function HomePage() {
                 </div>
                 <p className="mt-2 text-sm text-slate-700 leading-relaxed">
                  O <b>Tebas Tech oferece controle rápido e organizado de vendas, estoque e despesas</b>
-em um único sistema. As informações ficam <b>centralizadas, com histórico confiável e visão geral do negócio em tempo real</b>.
-Assim, você registra as operações com agilidade e acompanha <b>resultados, custos e lucro com clareza</b> para tomar decisões com segurança.
+                 em um único sistema. As informações ficam <b>centralizadas, com histórico confiável e visão geral do negócio em tempo real</b>.
+                Assim, você registra as operações com agilidade e acompanha <b>resultados, custos e lucro com clareza</b> para tomar decisões com segurança.
 
                 </p>
               </div>
