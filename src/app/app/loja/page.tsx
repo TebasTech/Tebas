@@ -14,7 +14,7 @@ export default function LojaPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const [storeId, setStoreId] = useState<string | null>(null)
-  const [storeName, setStoreName] = useState<string>("")
+  const [storeName, setStoreName] = useState<string>("Loja")
   const [storeNameDraft, setStoreNameDraft] = useState<string>("")
 
   async function getStoreIdOrRedirect(): Promise<string | null> {
@@ -40,9 +40,7 @@ export default function LojaPage() {
     }
 
     if (!data?.store_id) {
-      setErrorMsg(
-        "Seu usuário não está vinculado a nenhuma loja (store_id). Verifique a tabela users_profile."
-      )
+      setErrorMsg("Seu usuário não está vinculado a nenhuma loja (store_id).")
       return null
     }
 
@@ -106,7 +104,6 @@ export default function LojaPage() {
       return
     }
 
-    // ✅ atualiza o título grande e mantém o draft sincronizado
     setStoreName(name)
     setStoreNameDraft(name)
     setSaving(false)
@@ -125,9 +122,9 @@ export default function LojaPage() {
             <IconStore />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">{storeName || "Loja"}</h1>
+            <h1 className="text-2xl font-semibold text-slate-900">{storeName}</h1>
             <p className="text-sm text-slate-600 mt-1">
-              Ajuste o nome que aparece nos relatórios e no sistema.
+              Informações básicas da loja.
             </p>
           </div>
         </div>
@@ -164,7 +161,7 @@ export default function LojaPage() {
           <div className="px-5 py-4 border-b border-black/5">
             <div className="text-sm font-semibold text-slate-900">Identificação</div>
             <div className="text-xs text-slate-600 mt-1">
-              Mantenha simples e fácil de reconhecer.
+              O nome aparece no topo e nos relatórios.
             </div>
           </div>
 
@@ -177,9 +174,6 @@ export default function LojaPage() {
                 placeholder="Ex: Casa de Ração Randrey"
                 className="mt-2 w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
               />
-              <div className="text-xs text-slate-500 mt-2">
-                Esse nome aparece no topo e nos relatórios.
-              </div>
             </label>
           </div>
         </section>

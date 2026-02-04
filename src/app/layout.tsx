@@ -1,6 +1,5 @@
 import "./globals.css"
 import type { Metadata } from "next"
-import ClientShell from "./client-shell"
 
 export const metadata: Metadata = {
   title: "Tebas Tech",
@@ -10,9 +9,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body className="h-screen">
-        <ClientShell>{children}</ClientShell>
-      </body>
+      <body className="h-screen">{children}</body>
     </html>
   )
 }
