@@ -32,43 +32,67 @@ export default function LojaPage() {
       .from("users_profile")
       .select("store_id")
       .eq("id", user.id)
-      .single()
+      .limit(1)
 
     if (error) {
       setErrorMsg(`Erro ao buscar loja do usuário: ${error.message}`)
       return null
     }
 
-    if (!data?.store_id) {
+    const sid = data?.[0]?.store_id ? String(data[0].store_id) : null
+
+    if (!sid) {
       setErrorMsg("Seu usuário não está vinculado a nenhuma loja (store_id).")
       return null
     }
 
-    return String(data.store_id)
+    return sid
+  }
+
+  async function ensureStoreExists(currentStoreId: string) {
+    // Tenta buscar
+    const res = await supabase
+      .from("stores")
+      .select("id, name")
+      .eq("id", currentStoreId)
+      .limit(1)
+
+    if (res.error) {
+      throw new Error(res.error.message)
+    }
+
+    // Se não existe, cria
+    if (!res.data || res.data.length === 0) {
+      const insert = await supabase
+        .from("stores")
+        .insert({ id: currentStoreId, name: "Minha loja" })
+        .select("id, name")
+        .limit(1)
+
+      if (insert.error) {
+        throw new Error(insert.error.message)
+      }
+      return (insert.data?.[0] as StoreRow) ?? { id: currentStoreId, name: "Minha loja" }
+    }
+
+    return res.data[0] as StoreRow
   }
 
   async function loadStore(currentStoreId: string) {
     setErrorMsg(null)
     setLoading(true)
 
-    const { data, error } = await supabase
-      .from("stores")
-      .select("id, name")
-      .eq("id", currentStoreId)
-      .single()
+    try {
+      const row = await ensureStoreExists(currentStoreId)
+      const name = (row.name || "").trim()
 
-    if (error) {
-      setErrorMsg(`Erro ao carregar loja: ${error.message}`)
+      setStoreName(name || "Minha loja")
+      setStoreNameDraft(name || "")
       setLoading(false)
-      return
+    } catch (e: any) {
+      setErrorMsg(`Erro ao carregar loja: ${e?.message || "Falha desconhecida"}`)
+      setLoading(false)
     }
-
-    const row = data as StoreRow
-    const name = (row.name || "").trim()
-
-    setStoreName(name || "Minha loja")
-    setStoreNameDraft(name || "")
-    setLoading(false)
   }
 
   useEffect(() => {
@@ -123,9 +147,7 @@ export default function LojaPage() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">{storeName}</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Informações básicas da loja.
-            </p>
+            <p className="text-sm text-slate-600 mt-1">Informações básicas da loja.</p>
           </div>
         </div>
 
@@ -160,9 +182,7 @@ export default function LojaPage() {
         <section className="rounded-2xl border border-black/5 bg-white shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-black/5">
             <div className="text-sm font-semibold text-slate-900">Identificação</div>
-            <div className="text-xs text-slate-600 mt-1">
-              O nome aparece no topo e nos relatórios.
-            </div>
+            <div className="text-xs text-slate-600 mt-1">O nome aparece no topo e nos relatórios.</div>
           </div>
 
           <div className="p-5">
