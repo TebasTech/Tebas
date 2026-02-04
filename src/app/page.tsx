@@ -117,9 +117,10 @@ export default function HomePage() {
                   Por que isso importa?
                 </div>
                 <p className="mt-2 text-sm text-slate-700 leading-relaxed">
-                  Caderno e WhatsApp são rápidos, mas viram bagunça: estoque errado, compra sem controle,
-                  preço sem margem e dinheiro que “some”.
-                  O Tebas Tech centraliza tudo e mostra o que está acontecendo <b>de verdade</b>.
+                 O <b>Tebas Tech oferece controle rápido e organizado de vendas, estoque e despesas</b>
+em um único sistema. As informações ficam <b>centralizadas, com histórico confiável e visão geral do negócio em tempo real</b>.
+Assim, você registra as operações com agilidade e acompanha <b>resultados, custos e lucro com clareza</b> para tomar decisões com segurança.
+
                 </p>
               </div>
             </section>
