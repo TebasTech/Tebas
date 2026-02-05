@@ -63,7 +63,7 @@ export default function HomePage() {
           </div>
 
           <div className="text-xs text-slate-600">
-            Gestão simples para pequenos comércios
+            Gestão simples e lucro claro
           </div>
         </div>
       </header>
@@ -235,7 +235,7 @@ export default function HomePage() {
           </section>
 
           <footer className="mt-10 text-center text-xs text-slate-600">
-            © {new Date().getFullYear()} Tebas Tech • Sistema de gestão para pequenos comércios
+            © {new Date().getFullYear()} Tebas Tech • Sistema de gestão com engenharia aplicada
           </footer>
         </div>
       </main>
