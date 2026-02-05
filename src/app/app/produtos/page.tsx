@@ -10,18 +10,15 @@ type Product = {
   codigo: number | null
   tipo: string | null
   descricao: string
-  marca: string | null
-  fornecedor: string | null
-  preco: number | null
   estoque_minimo: number | null
+  preco: number | null
 }
 
-const TIPOS = [
+const CATEGORIAS = [
   { value: "", label: "Selecione..." },
-  { value: "ração pacote", label: "Ração (pacote)" },
-  { value: "ração granel", label: "Ração (granel)" },
+  { value: "ração pacote", label: "Ração" },
+  { value: "ração granel", label: "Ração granel" },
   { value: "diversos", label: "Diversos" },
-  { value: "outros", label: "Outros" },
 ]
 
 export default function ProdutosPage() {
@@ -38,9 +35,8 @@ export default function ProdutosPage() {
 
   // form
   const [descricao, setDescricao] = useState("")
-  const [marca, setMarca] = useState("")
-  const [fornecedor, setFornecedor] = useState("")
-  const [tipo, setTipo] = useState<string>("") // <-- começa vazio (Selecione...)
+  const [tipo, setTipo] = useState<string>("")
+  const [estoqueMinimo, setEstoqueMinimo] = useState("0")
   const [preco, setPreco] = useState("")
 
   async function getStoreIdOrRedirect() {
@@ -71,9 +67,10 @@ export default function ProdutosPage() {
 
   async function loadProducts(sid: string) {
     setErrorMsg(null)
+
     const { data, error } = await supabase
       .from("products")
-      .select("id, store_id, codigo, tipo, descricao, marca, fornecedor, preco, estoque_minimo")
+      .select("id, store_id, codigo, tipo, descricao, estoque_minimo, preco")
       .eq("store_id", sid)
       .order("codigo", { ascending: true, nullsFirst: false })
 
@@ -105,9 +102,8 @@ export default function ProdutosPage() {
 
   function resetForm() {
     setDescricao("")
-    setMarca("")
-    setFornecedor("")
-    setTipo("") // <-- volta para "Selecione..."
+    setTipo("")
+    setEstoqueMinimo("0")
     setPreco("")
   }
 
@@ -116,8 +112,7 @@ export default function ProdutosPage() {
     if (!t) return 0
     const norm = t.replace(/\./g, "").replace(",", ".")
     const n = Number(norm)
-    if (!Number.isFinite(n)) return 0
-    return n
+    return Number.isFinite(n) ? n : 0
   }
 
   async function onSave() {
@@ -140,34 +135,27 @@ export default function ProdutosPage() {
       return
     }
 
+    const min = Number(String(estoqueMinimo).replace(",", "."))
+    if (!Number.isFinite(min) || min < 0) {
+      setErrorMsg("Estoque mínimo inválido.")
+      return
+    }
+
     const price = toNumberBR(preco)
     if (!Number.isFinite(price) || price < 0) {
-      setErrorMsg("Preço inválido.")
+      setErrorMsg("Valor inválido.")
       return
     }
 
     setSaving(true)
 
-    // gerar código sequencial (max+1) por loja
-    const mx = await supabase
-      .from("products")
-      .select("codigo")
-      .eq("store_id", storeId)
-      .order("codigo", { ascending: false, nullsFirst: false })
-      .limit(1)
-
-    const last = (mx.data?.[0]?.codigo ?? 0) as number
-    const nextCodigo = (Number.isFinite(last) ? last : 0) + 1
-
+    // não manda "codigo": o banco gera sozinho (identity)
     const payload = {
       store_id: storeId,
-      codigo: nextCodigo,
       tipo,
       descricao: d,
-      marca: marca.trim() ? marca.trim() : null,
-      fornecedor: fornecedor.trim() ? fornecedor.trim() : null,
+      estoque_minimo: Math.floor(min),
       preco: price,
-      estoque_minimo: 0,
     }
 
     const { error } = await supabase.from("products").insert(payload)
@@ -210,26 +198,12 @@ export default function ProdutosPage() {
             className="flex-1 h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
           />
 
-          <input
-            value={marca}
-            onChange={(e) => setMarca(e.target.value)}
-            placeholder="Marca (opcional)"
-            className="w-full md:w-[220px] h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
-          />
-
-          <input
-            value={fornecedor}
-            onChange={(e) => setFornecedor(e.target.value)}
-            placeholder="Fornecedor (opcional)"
-            className="w-full md:w-[240px] h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
-          />
-
           <select
             value={tipo}
             onChange={(e) => setTipo(e.target.value)}
             className="w-full md:w-[220px] h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
           >
-            {TIPOS.map((t) => (
+            {CATEGORIAS.map((t) => (
               <option key={t.value || "empty"} value={t.value}>
                 {t.label}
               </option>
@@ -237,9 +211,17 @@ export default function ProdutosPage() {
           </select>
 
           <input
+            value={estoqueMinimo}
+            onChange={(e) => setEstoqueMinimo(e.target.value)}
+            placeholder="Estoque mínimo"
+            inputMode="numeric"
+            className="w-full md:w-[180px] h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
+          />
+
+          <input
             value={preco}
             onChange={(e) => setPreco(e.target.value)}
-            placeholder="Preço (ex: 12,50)"
+            placeholder="Valor (ex: 12,50)"
             inputMode="decimal"
             className="w-full md:w-[180px] h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
           />
@@ -268,23 +250,19 @@ export default function ProdutosPage() {
               <thead className="bg-slate-50 text-slate-700">
                 <tr>
                   <th className="text-left font-semibold px-4 py-3">ID</th>
-                  <th className="text-left font-semibold px-4 py-3">Produto</th>
+                  <th className="text-left font-semibold px-4 py-3">Descrição</th>
                   <th className="text-left font-semibold px-4 py-3">Categoria</th>
-                  <th className="text-right font-semibold px-4 py-3">Preço</th>
+                  <th className="text-right font-semibold px-4 py-3">Estoque mín.</th>
+                  <th className="text-right font-semibold px-4 py-3">Valor</th>
                 </tr>
               </thead>
               <tbody className="bg-white">
                 {items.map((p) => (
                   <tr key={p.id} className="border-t border-black/5 hover:bg-slate-50/60">
                     <td className="px-4 py-3 text-slate-700">{p.codigo ?? "-"}</td>
-                    <td className="px-4 py-3 text-slate-900">
-                      <div className="font-semibold">{p.descricao}</div>
-                      <div className="text-xs text-slate-500">
-                        {p.marca ? `Marca: ${p.marca}` : ""}
-                        {p.fornecedor ? ` • Forn.: ${p.fornecedor}` : ""}
-                      </div>
-                    </td>
+                    <td className="px-4 py-3 text-slate-900 font-semibold">{p.descricao}</td>
                     <td className="px-4 py-3 text-slate-700">{p.tipo ?? "-"}</td>
+                    <td className="px-4 py-3 text-right text-slate-700">{p.estoque_minimo ?? 0}</td>
                     <td className="px-4 py-3 text-right font-semibold text-slate-900">
                       R$ {(Number(p.preco ?? 0)).toFixed(2).replace(".", ",")}
                     </td>
@@ -292,7 +270,7 @@ export default function ProdutosPage() {
                 ))}
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                       Nenhum produto cadastrado.
                     </td>
                   </tr>
