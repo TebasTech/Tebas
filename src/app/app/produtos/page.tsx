@@ -16,7 +16,7 @@ import { supabase } from "@/lib/supabase/client"
 type Product = {
   id: number
   created_at: string
-  description: string
+  descricao: string
   brand: string | null
   supplier: string | null
   category: string | null
@@ -46,7 +46,7 @@ export default function Page() {
   // ✅ começa vazio
   const [category, setCategory] = useState<string>("")
 
-  const [description, setDescription] = useState("")
+  const [descricao, setdescricao] = useState("")
   const [brand, setBrand] = useState("")
   const [supplier, setSupplier] = useState("")
   const [unitPrice, setUnitPrice] = useState("")
@@ -56,7 +56,7 @@ export default function Page() {
     setErr(null)
     const { data, error } = await supabase
       .from("products")
-      .select("id, created_at, description, brand, supplier, category, unit_price")
+      .select("id, created_at, descricao, brand, supplier, category, unit_price")
       .order("id", { ascending: true })
       .limit(500)
 
@@ -73,7 +73,7 @@ export default function Page() {
     setErr(null)
 
     const payload = {
-      description: description.trim(),
+      descricao: descricao.trim(),
       brand: brand.trim() || null,
       supplier: supplier.trim() || null,
       category: category.trim() || "Outros", // fallback
@@ -83,7 +83,7 @@ export default function Page() {
     const { error } = await supabase.from("products").insert(payload as any)
     if (error) return setErr(error.message)
 
-    setDescription("")
+    setdescricao("")
     setBrand("")
     setSupplier("")
     setUnitPrice("")
@@ -103,8 +103,8 @@ export default function Page() {
       <div className="rounded-2xl border border-black/5 shadow-sm bg-white p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
           <input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            value={descricao}
+            onChange={(e) => setdescricao(e.target.value)}
             placeholder="Descrição"
             className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF] md:col-span-2"
           />
@@ -180,7 +180,7 @@ export default function Page() {
                 <tr key={p.id} className="border-t border-black/5">
                   <td className="px-4 py-3 text-slate-700">{p.id}</td>
                   <td className="px-4 py-3 text-slate-900">
-                    {p.description} {p.brand ? <span className="text-slate-600">• {p.brand}</span> : null}
+                    {p.descricao} {p.brand ? <span className="text-slate-600">• {p.brand}</span> : null}
                   </td>
                   <td className="px-4 py-3 text-slate-700">{p.category || "-"}</td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-900">
