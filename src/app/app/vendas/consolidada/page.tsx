@@ -28,10 +28,14 @@ type Customer = {
   phone: string | null
 }
 
+const PAYMENT_OPTIONS = ["Dinheiro", "Pix", "Débito", "Crédito", "Cheque", "Outros"] as const
+type Payment = (typeof PAYMENT_OPTIONS)[number]
+
 type Row = {
   id: string
   dateISO: string
   customerId: string
+  payment: Payment
   codeStr: string
   descStr: string
   productId: string
@@ -219,16 +223,6 @@ export default function VendasConsolidadaPage() {
     return { unitPrice: Number(p.preco || 0), total: round2(Number(p.preco || 0) * qty) }
   }
 
-  function applyTotalAndMaybeAutofillReceived(rowId: string, newTotal: number) {
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.id !== rowId) return r
-        const receivedStr = r.receivedTouched ? r.receivedStr : formatMoney(newTotal)
-        return { ...r, total: newTotal, receivedStr }
-      })
-    )
-  }
-
   function maybeAddRowOnEnter(e: React.KeyboardEvent, rowIndex: number) {
     if (e.key !== "Enter") return
     // Enter cria nova linha se for a última linha
@@ -303,7 +297,7 @@ export default function VendasConsolidadaPage() {
       const payload = {
         p_store_id: storeId,
         p_user_id: userId,
-        p_payment: "Dinheiro",
+        p_payment: r.payment,
         p_items: [
           {
             product_id: r.productId,
@@ -394,7 +388,7 @@ export default function VendasConsolidadaPage() {
               ))}
             </datalist>
 
-            <table className="w-full text-sm min-w-[1400px]">
+            <table className="w-full text-sm min-w-[1540px]">
               <thead className="bg-slate-50 text-slate-700">
                 <tr>
                   <th className="text-left font-semibold px-4 py-3">Data</th>
@@ -405,6 +399,7 @@ export default function VendasConsolidadaPage() {
                   <th className="text-right font-semibold px-4 py-3">Qtde</th>
                   <th className="text-right font-semibold px-4 py-3">Valor total</th>
                   <th className="text-right font-semibold px-4 py-3">Valor recebido</th>
+                  <th className="text-left font-semibold px-4 py-3">Pagamento</th>
                   <th className="text-left font-semibold px-4 py-3">Ação</th>
                 </tr>
               </thead>
@@ -534,6 +529,21 @@ export default function VendasConsolidadaPage() {
                       </td>
 
                       <td className="px-4 py-3">
+                        <select
+                          value={r.payment}
+                          onChange={(e) => updateRow(r.id, { payment: e.target.value as Payment, error: "" })}
+                          onKeyDown={(e) => maybeAddRowOnEnter(e, idx)}
+                          className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
+                        >
+                          {PAYMENT_OPTIONS.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td className="px-4 py-3">
                         <button
                           onClick={() => removeRow(r.id)}
                           className="h-10 px-3 rounded-2xl bg-white border border-black/10 text-slate-900 text-xs font-semibold hover:bg-slate-50 disabled:opacity-60"
@@ -567,6 +577,7 @@ function newRow(): Row {
     id: crypto.randomUUID(),
     dateISO: `${yyyy}-${mm}-${dd}`,
     customerId: "",
+    payment: "Dinheiro",
     codeStr: "",
     descStr: "",
     productId: "",

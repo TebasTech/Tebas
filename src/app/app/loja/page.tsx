@@ -1,211 +1,187 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 
-type StoreRow = { id: string; name: string | null }
+type Store = {
+  id: string
+  name: string
+  city: string | null
+  address: string | null
+  phone: string | null
+}
 
 export default function LojaPage() {
-  const router = useRouter()
+  const [store, setStore] = useState<Store | null>(null)
 
-  const [loading, setLoading] = useState(true)
+  const [name, setName] = useState("")
+  const [city, setCity] = useState("")
+  const [address, setAddress] = useState("")
+  const [phone, setPhone] = useState("")
+
+  const [salesToday, setSalesToday] = useState(0)
+  const [salesMonth, setSalesMonth] = useState(0)
+  const [expensesMonth, setExpensesMonth] = useState(0)
+
   const [saving, setSaving] = useState(false)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [msg, setMsg] = useState("")
 
-  const [storeId, setStoreId] = useState<string | null>(null)
-  const [storeName, setStoreName] = useState<string>("Loja")
-  const [storeNameDraft, setStoreNameDraft] = useState<string>("")
+  useEffect(() => {
+    load()
+  }, [])
 
-  async function getStoreIdOrRedirect(): Promise<string | null> {
-    setErrorMsg(null)
-
+  async function load() {
     const { data: auth } = await supabase.auth.getUser()
     const user = auth.user
+    if (!user) return
 
-    if (!user) {
-      router.push("/login")
-      return null
-    }
-
-    const { data, error } = await supabase
+    const { data: profile } = await supabase
       .from("users_profile")
       .select("store_id")
       .eq("id", user.id)
-      .limit(1)
+      .single()
 
-    if (error) {
-      setErrorMsg(`Erro ao buscar loja do usuário: ${error.message}`)
-      return null
-    }
+    if (!profile?.store_id) return
 
-    const sid = data?.[0]?.store_id ? String(data[0].store_id) : null
+    const storeId = profile.store_id
 
-    if (!sid) {
-      setErrorMsg("Seu usuário não está vinculado a nenhuma loja (store_id).")
-      return null
-    }
-
-    return sid
-  }
-
-  async function ensureStoreExists(currentStoreId: string) {
-    // Tenta buscar
-    const res = await supabase
+    const { data: s } = await supabase
       .from("stores")
-      .select("id, name")
-      .eq("id", currentStoreId)
-      .limit(1)
+      .select("*")
+      .eq("id", storeId)
+      .single()
 
-    if (res.error) {
-      throw new Error(res.error.message)
+    if (s) {
+      setStore(s)
+      setName(s.name || "")
+      setCity(s.city || "")
+      setAddress(s.address || "")
+      setPhone(s.phone || "")
     }
 
-    // Se não existe, cria
-    if (!res.data || res.data.length === 0) {
-      const insert = await supabase
-        .from("stores")
-        .insert({ id: currentStoreId, name: "Minha loja" })
-        .select("id, name")
-        .limit(1)
+    // ===== métricas =====
 
-      if (insert.error) {
-        throw new Error(insert.error.message)
-      }
-      return (insert.data?.[0] as StoreRow) ?? { id: currentStoreId, name: "Minha loja" }
-    }
+    const today = new Date().toISOString().slice(0, 10)
+    const firstDay = new Date()
+    firstDay.setDate(1)
+    const firstDayISO = firstDay.toISOString()
 
-    return res.data[0] as StoreRow
+    const salesTodayRes = await supabase
+      .from("sales")
+      .select("total_final")
+      .gte("created_at", today)
+
+    const salesMonthRes = await supabase
+      .from("sales")
+      .select("total_final")
+      .gte("created_at", firstDayISO)
+
+    const expensesRes = await supabase
+      .from("cash_out")
+      .select("total")
+      .gte("created_at", firstDayISO)
+
+    setSalesToday(sum(salesTodayRes.data, "total_final"))
+    setSalesMonth(sum(salesMonthRes.data, "total_final"))
+    setExpensesMonth(sum(expensesRes.data, "total"))
   }
 
-  async function loadStore(currentStoreId: string) {
-    setErrorMsg(null)
-    setLoading(true)
-
-    try {
-      const row = await ensureStoreExists(currentStoreId)
-      const name = (row.name || "").trim()
-
-      setStoreName(name || "Minha loja")
-      setStoreNameDraft(name || "")
-      setLoading(false)
-    } catch (e: any) {
-      setErrorMsg(`Erro ao carregar loja: ${e?.message || "Falha desconhecida"}`)
-      setLoading(false)
-    }
+  function sum(arr: any[] | null, field: string) {
+    if (!arr) return 0
+    return arr.reduce((a, b) => a + Number(b[field] || 0), 0)
   }
 
-  useEffect(() => {
-    ;(async () => {
-      const sid = await getStoreIdOrRedirect()
-      if (!sid) {
-        setLoading(false)
-        return
-      }
-      setStoreId(sid)
-      await loadStore(sid)
-    })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function onSave() {
-    setErrorMsg(null)
-    if (!storeId) return
-
-    const name = storeNameDraft.trim()
-    if (!name) {
-      alert("Digite o nome da loja.")
-      return
-    }
-
+  async function save() {
+    if (!store) return
     setSaving(true)
+    setMsg("")
 
-    const { error } = await supabase.from("stores").update({ name }).eq("id", storeId)
+    const { error } = await supabase
+      .from("stores")
+      .update({
+        name,
+        city,
+        address,
+        phone,
+      })
+      .eq("id", store.id)
 
-    if (error) {
-      setErrorMsg(`Erro ao salvar: ${error.message}`)
-      setSaving(false)
-      return
-    }
-
-    setStoreName(name)
-    setStoreNameDraft(name)
     setSaving(false)
+
+    if (error) setMsg(error.message)
+    else setMsg("Salvo com sucesso ✓")
   }
 
-  async function onRefresh() {
-    if (!storeId) return
-    await loadStore(storeId)
-  }
+  const lucro = salesMonth - expensesMonth
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="mt-1 h-11 w-11 rounded-2xl bg-[#EAF7FF] border border-black/5 flex items-center justify-center">
-            <IconStore />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">{storeName}</h1>
-            <p className="text-sm text-slate-600 mt-1">Informações básicas da loja.</p>
-          </div>
-        </div>
 
-        <div className="flex flex-col gap-3 w-full md:w-auto md:flex-row">
-          <button
-            onClick={onRefresh}
-            disabled={loading || saving}
-            className="h-11 px-5 rounded-2xl bg-white border border-black/10 text-slate-900 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60 w-full md:w-auto"
-          >
-            {loading ? "Carregando..." : "Atualizar"}
-          </button>
+      {/* ===== NOME GRANDE ===== */}
+      <h1 className="text-3xl font-bold text-slate-900">
+        {name || "Minha Loja"}
+      </h1>
 
-          <button
-            onClick={onSave}
-            disabled={saving || loading}
-            className="h-11 px-5 rounded-2xl bg-[#22C55E] text-white text-sm font-semibold hover:brightness-95 disabled:opacity-60 w-full md:w-auto"
-          >
-            {saving ? "Salvando..." : "Salvar alterações"}
-          </button>
-        </div>
+      {/* ===== CARDS ===== */}
+      <div className="grid grid-cols-4 gap-4">
+
+        <Card title="Hoje" value={money(salesToday)} />
+        <Card title="Vendas mês" value={money(salesMonth)} />
+        <Card title="Despesas mês" value={money(expensesMonth)} />
+        <Card title="Lucro mês" value={money(lucro)} />
+
       </div>
 
-      {errorMsg ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {errorMsg}
+      {/* ===== FORM ===== */}
+      <div className="rounded-2xl border border-black/5 bg-white p-6 space-y-4">
+
+        <h2 className="font-semibold text-slate-900">Dados da Loja</h2>
+
+        <div className="grid grid-cols-2 gap-4">
+
+          <Input label="Nome" value={name} set={setName} />
+          <Input label="Telefone" value={phone} set={setPhone} />
+          <Input label="Cidade" value={city} set={setCity} />
+          <Input label="Endereço" value={address} set={setAddress} />
+
         </div>
-      ) : null}
 
-      {loading ? (
-        <div className="text-sm text-slate-600">Carregando…</div>
-      ) : (
-        <section className="rounded-2xl border border-black/5 bg-white shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-black/5">
-            <div className="text-sm font-semibold text-slate-900">Identificação</div>
-            <div className="text-xs text-slate-600 mt-1">O nome aparece no topo e nos relatórios.</div>
-          </div>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="h-10 px-4 rounded-xl bg-[#00D6FF] text-black font-semibold"
+        >
+          {saving ? "Salvando..." : "Salvar"}
+        </button>
 
-          <div className="p-5">
-            <label className="block max-w-xl">
-              <span className="text-sm font-semibold text-slate-800">Nome da loja</span>
-              <input
-                value={storeNameDraft}
-                onChange={(e) => setStoreNameDraft(e.target.value)}
-                placeholder="Ex: Casa de Ração Randrey"
-                className="mt-2 w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
-              />
-            </label>
-          </div>
-        </section>
-      )}
+        {msg && <p className="text-sm text-emerald-600">{msg}</p>}
+      </div>
     </div>
   )
 }
 
-function IconStore() {
+function Card({ title, value }: any) {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-900" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M3 10l2-6h14l2 6M5 10v10h14V10M9 20v-7h6v7" />
-    </svg>
+    <div className="bg-white border rounded-2xl p-4 shadow-sm">
+      <p className="text-xs text-slate-500">{title}</p>
+      <p className="text-xl font-bold">{value}</p>
+    </div>
   )
+}
+
+function Input({ label, value, set }: any) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs text-slate-600">{label}</label>
+      <input
+        value={value}
+        onChange={(e) => set(e.target.value)}
+        className="h-10 rounded-xl border border-slate-200 px-3"
+      />
+    </div>
+  )
+}
+
+function money(n: number) {
+  return "R$ " + n.toFixed(2).replace(".", ",")
 }

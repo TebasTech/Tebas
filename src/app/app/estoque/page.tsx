@@ -561,7 +561,7 @@ export default function EstoquePage() {
           <input
             value={brandOrSupplier}
             onChange={(e) => setBrandOrSupplier(e.target.value)}
-            placeholder="Ex: DogPlus ou Fornecedor ABC"
+            placeholder="Ex: Fornecedor ABC"
             className="mt-2 w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:ring-2 focus:ring-[#00D6FF]"
           />
         </label>
